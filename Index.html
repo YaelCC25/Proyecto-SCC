@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Control de Inventario</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="estilos.css">
+</head>
+
+<body>
+  <div id="login" class="login">
+    <div class="login-box">
+      <h1>Control de Inventario</h1>
+      <p class="muted">Levantamiento físico de bienes institucionales</p>
+      <label>Correo<input id="l-correo" type="email" value="admin@demo.mx"></label>
+      <label>Contraseña<input id="l-pass" type="password" value="demo"></label>
+      <label>Rol (solo en la demo)
+        <select id="l-rol">
+          <option>Administrador</option>
+          <option>Responsable de inventario</option>
+          <option>Verificador</option>
+        </select>
+      </label>
+      <button class="btn primary" id="l-ok">Iniciar sesión</button>
+      <p class="muted small">Versión visual con datos ficticios. Aún no hay conexión a base de datos.</p>
+    </div>
+  </div>
+  <div id="app" class="app" hidden>
+    <aside class="side">
+      <div class="brand">Control de<br>Inventario</div>
+      <nav id="nav"></nav>
+      <div class="user"><span id="u-info"></span><button class="link" id="salir">Cerrar sesión</button></div>
+    </aside>
+    <main>
+      <header class="top">
+        <h2 id="titulo"></h2><span class="chip">Ejercicio 2026</span>
+      </header>
+      <section id="vista"></section>
+    </main>
+  </div>
+  <div id="toast" class="toast" hidden></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>
