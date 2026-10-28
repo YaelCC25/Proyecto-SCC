@@ -90,6 +90,31 @@ const VISTAS = {
 
   levantamiento() {
     $('#vista').innerHTML = `
+      <div class="card registro-manual">
+        <div class="registro-cabecera">
+          <div><h3>Captura de bienes</h3><p class="muted small">Registra lo que te dicten: bien, ubicación y custodio. Puedes seleccionar datos existentes o escribir nuevos.</p></div>
+          <button type="button" class="btn primary" id="nuevo-bien" aria-controls="registro-form" aria-expanded="false">Registrar bien manualmente</button>
+        </div>
+        <form id="registro-form" class="registro-form" aria-labelledby="registro-titulo" hidden>
+          <h3 id="registro-titulo">Registrar un bien</h3>
+          <p class="muted small">Los bienes nuevos quedan pendientes de verificar. Todos los campos, excepto observaciones, son obligatorios.</p>
+          <div class="registro-grid">
+            <label>Número de inventario<input id="registro-inv" required placeholder="Ej. INV-00148"></label>
+            <label>Descripción del bien<input id="registro-desc" required placeholder="Ej. Monitor Dell de 24 pulgadas"></label>
+            <label>Ubicación<input id="registro-ubic" list="registro-lugares" required placeholder="Selecciona o escribe la ubicación" autocomplete="off"></label>
+            <label>Custodio<input id="registro-custodio" list="registro-custodios" required placeholder="Selecciona o escribe el nombre" autocomplete="off"></label>
+          </div>
+          <datalist id="registro-lugares"></datalist>
+          <datalist id="registro-custodios"></datalist>
+          <label>Observaciones<input id="registro-obs" placeholder="Notas del registro (opcional)"></label>
+          <p id="registro-error" class="note" role="alert" hidden></p>
+          <div class="registro-acciones">
+            <button type="submit" class="btn primary">Guardar bien</button>
+            <button type="submit" class="btn" data-seguir>Guardar y capturar otro</button>
+            <button type="button" class="btn" id="cancelar-registro">Cancelar</button>
+          </div>
+        </form>
+      </div>
       <div class="card ubicacion-selector">
         <label for="fu">Ubicación que vas a revisar</label>
         <select id="fu" aria-describedby="ubicacion-ayuda"></select>
@@ -122,6 +147,69 @@ const VISTAS = {
       }).join('');
       selector.value = seleccion;
     };
+    const actualizarCustodios = () => {
+      const filtro = $('#fc'), elegido = filtro.value;
+      filtro.innerHTML = '<option value="">Todos los custodios</option>' + CUSTODIOS.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
+      filtro.value = elegido;
+      $('#registro-custodios').innerHTML = CUSTODIOS.map(c => `<option value="${esc(c.nombre)}"></option>`).join('');
+    };
+    const formulario = $('#registro-form');
+    let editando = null;
+    const abrirRegistro = (i = null) => {
+      editando = i;
+      const b = i === null ? null : BIENES[i];
+      formulario.reset();
+      $('#registro-error').hidden = true;
+      $('#registro-titulo').textContent = b ? `Editar ${b.inv}` : 'Registrar un bien';
+      $('#registro-inv').value = b?.inv ?? '';
+      $('#registro-desc').value = b?.desc ?? '';
+      $('#registro-ubic').value = b ? b.ubic : selector.value === 'Sin ubicación' ? '' : selector.value;
+      $('#registro-custodio').value = b?.custodio ? cust(b.custodio) : '';
+      $('#registro-obs').value = b?.obs ?? '';
+      $('#registro-lugares').innerHTML = lugaresDisponibles().map(l => `<option value="${esc(l)}"></option>`).join('');
+      actualizarCustodios();
+      formulario.hidden = false;
+      $('#nuevo-bien').setAttribute('aria-expanded', 'true');
+      $('#registro-inv').focus();
+    };
+    const cerrarRegistro = () => {
+      formulario.reset();
+      formulario.hidden = true;
+      editando = null;
+      $('#registro-error').hidden = true;
+      $('#nuevo-bien').setAttribute('aria-expanded', 'false');
+    };
+    $('#nuevo-bien').onclick = () => abrirRegistro();
+    $('#cancelar-registro').onclick = () => { cerrarRegistro(); $('#nuevo-bien').focus(); };
+    formulario.oninput = () => $('#registro-error').hidden = true;
+    formulario.onsubmit = e => {
+      e.preventDefault();
+      const inv = $('#registro-inv').value.trim(), desc = $('#registro-desc').value.trim();
+      const nombreLugar = $('#registro-ubic').value.trim(), nombreCustodio = $('#registro-custodio').value.trim();
+      const error = (mensaje, campo) => {
+        $('#registro-error').textContent = mensaje;
+        $('#registro-error').hidden = false;
+        $(campo).focus();
+      };
+      if (!inv) return error('Escribe el número de inventario.', '#registro-inv');
+      if (!desc) return error('Escribe la descripción del bien.', '#registro-desc');
+      if (!nombreLugar) return error('Selecciona o escribe la ubicación.', '#registro-ubic');
+      if (!nombreCustodio) return error('Selecciona o escribe el custodio.', '#registro-custodio');
+      const duplicado = BIENES.some((b, i) => i !== editando && b.inv.trim().toLocaleLowerCase('es') === inv.toLocaleLowerCase('es'));
+      if (duplicado) return error('Ese número de inventario ya existe. Busca el bien y utiliza Editar datos.', '#registro-inv');
+      const lugar = registrarLugar(nombreLugar), custodio = registrarCustodio(nombreCustodio);
+      const datos = { inv, desc, ubic: lugar, custodio: custodio.id, obs: $('#registro-obs').value.trim() };
+      const esNuevo = editando === null;
+      if (esNuevo) BIENES.push({ ...datos, estado: 'pendiente' });
+      else Object.assign(BIENES[editando], datos);
+      const continuar = e.submitter?.hasAttribute('data-seguir');
+      cerrarRegistro();
+      actualizarLugares(lugar); actualizarCustodios();
+      ['#q', '#fc', '#fe', '#q-otro'].forEach(s => $(s).value = '');
+      pintar();
+      toast(esNuevo ? `${inv}: bien registrado en ${lugar}, pendiente de verificar` : `${inv}: datos actualizados`);
+      if (continuar) { abrirRegistro(); $('#registro-custodio').value = custodio.nombre; }
+    };
     const pintarOtros = () => {
       const q = $('#q-otro').value.trim().toLocaleLowerCase('es');
       const resultados = $('#resultados-otro');
@@ -138,7 +226,7 @@ const VISTAS = {
       if (!lugar) {
         $('#resumen-ubicacion').innerHTML = '';
         $('#cantidad-bienes').textContent = '';
-        $('#lista').innerHTML = '<div class="estado-vacio"><h3>Comienza por una ubicación</h3><p class="muted">Elige el lugar que vas a revisar en el selector de arriba.</p></div>';
+        $('#lista').innerHTML = '<div class="estado-vacio"><h3>Comienza por una ubicación</h3><p class="muted">Elige el lugar que vas a revisar o utiliza Registrar bien manualmente para capturar uno nuevo.</p></div>';
         return;
       }
       const bienesLugar = BIENES.filter(b => ubicacion(b) === lugar), c = conteo(bienesLugar);
@@ -156,7 +244,7 @@ const VISTAS = {
         (!q || `${b.inv} ${b.desc}`.toLocaleLowerCase('es').includes(q)) && (!fc || b.custodio == fc) && (!fe || b.estado === fe));
       $('#cantidad-bienes').textContent = `Mostrando ${lista.length} de ${bienesLugar.length} bienes en ${lugar}.`;
       $('#lista').innerHTML = lista.map(([b, i]) => `<article class="bien" data-bien="${esc(b.inv)}">
-        <div class="bien-cabecera"><h4>${esc(b.inv)} · ${esc(b.desc)}</h4>${badge(b.estado)}</div>
+        <div class="bien-cabecera"><h4>${esc(b.inv)} · ${esc(b.desc)}</h4><div class="bien-acciones">${badge(b.estado)}<button type="button" class="link" data-editar="${i}">Editar datos</button></div></div>
         <p class="ubicacion-bien">Ubicación: <strong>${esc(ubicacion(b))}</strong></p>
         <p class="muted small">Custodio: ${esc(cust(b.custodio))}</p>
         <div class="choices" role="group" aria-label="Verificación de ${esc(b.inv)}">${Object.entries(ESTADOS).map(([k, v]) => `<button type="button" class="btn ${b.estado === k ? 'sel' : ''}" aria-pressed="${b.estado === k}" data-i="${i}" data-e="${k}">${v}</button>`).join('')}</div>
@@ -189,6 +277,8 @@ const VISTAS = {
       else if (boton) toast('Selecciona una ubicación de destino');
     };
     $('#lista').onclick = e => {
+      const editar = e.target.closest('[data-editar]');
+      if (editar) { abrirRegistro(Number(editar.dataset.editar)); return; }
       const boton = e.target.closest('[data-e]'); if (!boton) return;
       BIENES[boton.dataset.i].estado = boton.dataset.e;
       pintar(); toast('Verificación registrada: ' + ESTADOS[boton.dataset.e]);
@@ -278,6 +368,15 @@ function registrarLugar(nombre) {
   LUGARES.push(limpio);
   return limpio;
 }
+function registrarCustodio(nombre) {
+  const limpio = String(nombre ?? '').trim();
+  if (!limpio) return null;
+  const existente = CUSTODIOS.find(c => c.nombre.toLocaleLowerCase('es') === limpio.toLocaleLowerCase('es'));
+  if (existente) return existente;
+  const custodio = { id: Math.max(0, ...CUSTODIOS.map(c => c.id)) + 1, nombre: limpio, empleado: '—', area: '—' };
+  CUSTODIOS.push(custodio);
+  return custodio;
+}
 function bloqueUbic(b, i) {
   return `<details class="cambiar-ubicacion"><summary>Cambiar ubicación</summary>
     <form class="form-ubicacion" data-mover="${i}">
@@ -338,8 +437,7 @@ function vistaPrevia(filas, nombre) {
         const id = String(r[m.inv]).trim();
         if (!id || BIENES.some(b => b.inv === id)) return;
         const nombreC = m.custodio ? String(r[m.custodio]).trim() : '';
-        let c = CUSTODIOS.find(x => x.nombre === nombreC);
-        if (!c && nombreC) { c = { id: CUSTODIOS.length + 1, nombre: nombreC, empleado: '—', area: '—' }; CUSTODIOS.push(c); }
+        const c = registrarCustodio(nombreC);
         const ub = registrarLugar(m.ubic ? r[m.ubic] : '');
         BIENES.push({ inv: id, desc: m.desc ? r[m.desc] : '', custodio: c ? c.id : 0, ubic: ub, estado: 'pendiente', obs: '' }); n++;
       });
