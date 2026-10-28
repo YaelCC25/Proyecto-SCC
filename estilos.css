@@ -550,7 +550,13 @@ th {
 }
 
 .ubicacion-selector select {
-  max-width: 560px;
+  max-width: 100%;
+}
+
+.seleccion-levantamiento {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
 }
 
 .ubicacion-selector p,
@@ -714,7 +720,8 @@ summary {
 }
 
 @media (max-width: 600px) {
-  .registro-grid {
+  .registro-grid,
+  .seleccion-levantamiento {
     grid-template-columns: minmax(0, 1fr);
   }
 

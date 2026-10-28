@@ -116,18 +116,19 @@ const VISTAS = {
         </form>
       </div>
       <div class="card ubicacion-selector">
-        <label for="fu">Ubicación que vas a revisar</label>
-        <select id="fu" aria-describedby="ubicacion-ayuda"></select>
-        <p class="muted small" id="ubicacion-ayuda">Selecciona un lugar para ver todos sus bienes y registrar la verificación.</p>
+        <div class="seleccion-levantamiento">
+          <div><label for="fu">Ubicación</label><select id="fu" aria-describedby="ubicacion-ayuda"></select></div>
+          <div><label for="fc">Custodio</label><select id="fc" aria-describedby="ubicacion-ayuda"><option value="">Todos los custodios</option>${CUSTODIOS.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('')}</select></div>
+        </div>
+        <p class="muted small" id="ubicacion-ayuda">Selecciona una ubicación, un custodio o combina ambos para revisar sus bienes.</p>
       </div>
       <div id="resumen-ubicacion" aria-live="polite"></div>
       <div id="controles-ubicacion" hidden>
         <div class="tools filtros-levantamiento">
           <label>Buscar bien<input id="q" type="search" placeholder="Número de inventario o descripción"></label>
-          <label>Custodio<select id="fc"><option value="">Todos los custodios</option>${CUSTODIOS.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('')}</select></label>
           <label>Estado<select id="fe"><option value="">Todos los estados</option>${Object.entries(ESTADOS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
         </div>
-        <details class="card buscar-otro">
+        <details class="card buscar-otro" id="buscar-otra-ubicacion" hidden>
           <summary>Buscar bien de otra ubicación</summary>
           <p class="muted small">Busca un bien para moverlo a la ubicación seleccionada. Después puedes registrar su verificación.</p>
           <label>Inventario o descripción<input id="q-otro" type="search" placeholder="Buscar en las demás ubicaciones"></label>
@@ -141,8 +142,8 @@ const VISTAS = {
     const actualizarLugares = (seleccion = '') => {
       const lugares = lugaresDisponibles();
       if (BIENES.some(b => !b.ubic)) lugares.push('Sin ubicación');
-      selector.innerHTML = '<option value="">Selecciona una ubicación para comenzar</option>' + lugares.map(l => {
-        const n = BIENES.filter(b => ubicacion(b) === l).length;
+      selector.innerHTML = '<option value="">Todas las ubicaciones</option>' + lugares.map(l => {
+        const n = BIENES.filter(b => ubicacion(b) === l && (!$('#fc').value || b.custodio == $('#fc').value)).length;
         return `<option value="${esc(l)}">${esc(l)} (${n})</option>`;
       }).join('');
       selector.value = seleccion;
@@ -164,7 +165,7 @@ const VISTAS = {
       $('#registro-inv').value = b?.inv ?? '';
       $('#registro-desc').value = b?.desc ?? '';
       $('#registro-ubic').value = b ? b.ubic : selector.value === 'Sin ubicación' ? '' : selector.value;
-      $('#registro-custodio').value = b?.custodio ? cust(b.custodio) : '';
+      $('#registro-custodio').value = b ? (b.custodio ? cust(b.custodio) : '') : ($('#fc').value ? cust($('#fc').value) : '');
       $('#registro-obs').value = b?.obs ?? '';
       $('#registro-lugares').innerHTML = lugaresDisponibles().map(l => `<option value="${esc(l)}"></option>`).join('');
       actualizarCustodios();
@@ -203,9 +204,12 @@ const VISTAS = {
       if (esNuevo) BIENES.push({ ...datos, estado: 'pendiente' });
       else Object.assign(BIENES[editando], datos);
       const continuar = e.submitter?.hasAttribute('data-seguir');
+      const porCustodio = Boolean($('#fc').value);
       cerrarRegistro();
-      actualizarLugares(lugar); actualizarCustodios();
-      ['#q', '#fc', '#fe', '#q-otro'].forEach(s => $(s).value = '');
+      actualizarCustodios();
+      $('#fc').value = porCustodio ? String(custodio.id) : '';
+      actualizarLugares(lugar);
+      ['#q', '#fe', '#q-otro'].forEach(s => $(s).value = '');
       pintar();
       toast(esNuevo ? `${inv}: bien registrado en ${lugar}, pendiente de verificar` : `${inv}: datos actualizados`);
       if (continuar) { abrirRegistro(); $('#registro-custodio').value = custodio.nombre; }
@@ -213,36 +217,42 @@ const VISTAS = {
     const pintarOtros = () => {
       const q = $('#q-otro').value.trim().toLocaleLowerCase('es');
       const resultados = $('#resultados-otro');
+      if (!selector.value || selector.value === 'Sin ubicación') { resultados.innerHTML = ''; return; }
       if (!q) { resultados.innerHTML = '<p class="muted small">Escribe el inventario o la descripción del bien que encontraste.</p>'; return; }
-      const otros = BIENES.map((b, i) => [b, i]).filter(([b]) => ubicacion(b) !== selector.value && `${b.inv} ${b.desc}`.toLocaleLowerCase('es').includes(q));
+      const otros = BIENES.map((b, i) => [b, i]).filter(([b]) => ubicacion(b) !== selector.value && (!$('#fc').value || b.custodio == $('#fc').value) && `${b.inv} ${b.desc}`.toLocaleLowerCase('es').includes(q));
       resultados.innerHTML = otros.map(([b, i]) => `<div class="item resultado-otro">
         <div><h4>${esc(b.inv)} · ${esc(b.desc)}</h4><span class="muted small">Ubicación: ${esc(ubicacion(b))} · Custodio: ${esc(cust(b.custodio))}</span></div>
         <button type="button" class="btn" data-traer="${i}">Mover a ${esc(selector.value)}</button>
       </div>`).join('') || '<p class="muted small">No hay coincidencias en otras ubicaciones.</p>';
     };
     const pintar = () => {
-      const lugar = selector.value;
-      $('#controles-ubicacion').hidden = !lugar;
-      if (!lugar) {
+      const lugar = selector.value, custodioId = $('#fc').value;
+      const activo = Boolean(lugar || custodioId);
+      $('#controles-ubicacion').hidden = !activo;
+      $('#buscar-otra-ubicacion').hidden = !lugar || lugar === 'Sin ubicación';
+      if (!activo) {
         $('#resumen-ubicacion').innerHTML = '';
         $('#cantidad-bienes').textContent = '';
-        $('#lista').innerHTML = '<div class="estado-vacio"><h3>Comienza por una ubicación</h3><p class="muted">Elige el lugar que vas a revisar o utiliza Registrar bien manualmente para capturar uno nuevo.</p></div>';
+        $('#lista').innerHTML = '<div class="estado-vacio"><h3>Selecciona una ubicación o un custodio</h3><p class="muted">Puedes revisar los bienes de un lugar, los de una persona o combinar ambas selecciones. También puedes registrar un bien manualmente.</p></div>';
         return;
       }
-      const bienesLugar = BIENES.filter(b => ubicacion(b) === lugar), c = conteo(bienesLugar);
-      const avance = bienesLugar.length ? Math.round((bienesLugar.length - c.pendiente) / bienesLugar.length * 100) : 0;
-      $('#resumen-ubicacion').innerHTML = `<h3 class="titulo-ubicacion">Levantamiento de ${esc(lugar)}</h3>
+      const enSeleccion = b => (!lugar || ubicacion(b) === lugar) && (!custodioId || b.custodio == custodioId);
+      const bienesSeleccion = BIENES.filter(enSeleccion), c = conteo(bienesSeleccion);
+      const avance = bienesSeleccion.length ? Math.round((bienesSeleccion.length - c.pendiente) / bienesSeleccion.length * 100) : 0;
+      const contexto = [lugar, custodioId ? cust(custodioId) : ''].filter(Boolean).join(' · ');
+      const titulo = lugar ? `Levantamiento de ${contexto}` : `Bienes de ${cust(custodioId)}`;
+      $('#resumen-ubicacion').innerHTML = `<h3 class="titulo-ubicacion">${esc(titulo)}</h3>
         <div class="stats">
-          <div class="stat"><b>${bienesLugar.length}</b><span>Bienes en esta ubicación</span></div>
+          <div class="stat"><b>${bienesSeleccion.length}</b><span>Bienes seleccionados</span></div>
           <div class="stat"><b>${c.pendiente}</b><span>Pendientes de verificar</span></div>
           <div class="stat"><b>${c.encontrado}</b><span>Encontrados</span></div>
           <div class="stat"><b>${c.no}</b><span>No encontrados</span></div>
           <div class="stat"><b>${avance}%</b><span>Avance de verificación</span></div>
         </div>`;
-      const q = $('#q').value.trim().toLocaleLowerCase('es'), fc = $('#fc').value, fe = $('#fe').value;
-      const lista = BIENES.map((b, i) => [b, i]).filter(([b]) => ubicacion(b) === lugar &&
-        (!q || `${b.inv} ${b.desc}`.toLocaleLowerCase('es').includes(q)) && (!fc || b.custodio == fc) && (!fe || b.estado === fe));
-      $('#cantidad-bienes').textContent = `Mostrando ${lista.length} de ${bienesLugar.length} bienes en ${lugar}.`;
+      const q = $('#q').value.trim().toLocaleLowerCase('es'), fe = $('#fe').value;
+      const lista = BIENES.map((b, i) => [b, i]).filter(([b]) => enSeleccion(b) &&
+        (!q || `${b.inv} ${b.desc}`.toLocaleLowerCase('es').includes(q)) && (!fe || b.estado === fe));
+      $('#cantidad-bienes').textContent = `Mostrando ${lista.length} de ${bienesSeleccion.length} bienes: ${contexto}.`;
       $('#lista').innerHTML = lista.map(([b, i]) => `<article class="bien" data-bien="${esc(b.inv)}">
         <div class="bien-cabecera"><h4>${esc(b.inv)} · ${esc(b.desc)}</h4><div class="bien-acciones">${badge(b.estado)}<button type="button" class="link" data-editar="${i}">Editar datos</button></div></div>
         <p class="ubicacion-bien">Ubicación: <strong>${esc(ubicacion(b))}</strong></p>
@@ -250,7 +260,7 @@ const VISTAS = {
         <div class="choices" role="group" aria-label="Verificación de ${esc(b.inv)}">${Object.entries(ESTADOS).map(([k, v]) => `<button type="button" class="btn ${b.estado === k ? 'sel' : ''}" aria-pressed="${b.estado === k}" data-i="${i}" data-e="${k}">${v}</button>`).join('')}</div>
         <label class="observaciones-bien">Observaciones<input data-o="${i}" value="${esc(b.obs)}" placeholder="Notas de la revisión"></label>
         ${bloqueUbic(b, i)}
-      </article>`).join('') || `<div class="estado-vacio"><p class="muted">${bienesLugar.length ? 'Ningún bien coincide con los filtros seleccionados.' : 'Esta ubicación todavía no tiene bienes. Puedes buscar uno de otra ubicación para moverlo aquí.'}</p></div>`;
+      </article>`).join('') || `<div class="estado-vacio"><p class="muted">${bienesSeleccion.length ? 'Ningún bien coincide con los filtros seleccionados.' : 'No hay bienes para esta selección. Puedes cambiar la ubicación o el custodio, o registrar un bien manualmente.'}</p></div>`;
       pintarOtros();
     };
     const mover = (i, destino) => {
@@ -261,15 +271,20 @@ const VISTAS = {
       b.ubic = lugar;
       // Cambiar de ubicación y verificar son acciones independientes.
       actualizarLugares(lugar);
-      ['#q', '#fc', '#fe', '#q-otro'].forEach(s => $(s).value = '');
+      ['#q', '#fe', '#q-otro'].forEach(s => $(s).value = '');
       pintar();
       toast(`${b.inv}: ubicación actualizada a ${lugar}`);
     };
     selector.onchange = () => {
-      ['#q', '#fc', '#fe', '#q-otro'].forEach(s => $(s).value = '');
+      ['#q', '#fe', '#q-otro'].forEach(s => $(s).value = '');
       pintar();
     };
-    ['#q', '#fc', '#fe'].forEach(s => $(s).oninput = pintar);
+    $('#fc').onchange = () => {
+      ['#q', '#fe', '#q-otro'].forEach(s => $(s).value = '');
+      actualizarLugares(selector.value);
+      pintar();
+    };
+    ['#q', '#fe'].forEach(s => $(s).oninput = pintar);
     $('#q-otro').oninput = pintarOtros;
     $('#resultados-otro').onclick = e => {
       const boton = e.target.closest('[data-traer]');
