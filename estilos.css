@@ -8,7 +8,6 @@
   --accent-d: #0a4f4f;
   --ok: #2f7d4f;
   --no: #b3392f;
-  --otro: #b97a12;
   --pen: #6b7780
 }
 
@@ -396,10 +395,6 @@ th {
   background: var(--no)
 }
 
-.st.otro {
-  background: var(--otro)
-}
-
 .st.pendiente {
   background: var(--pen)
 }
@@ -491,10 +486,11 @@ th {
 
 @media(max-width:760px) {
   .app {
-    grid-template-columns: 1fr
+    grid-template-columns: minmax(0, 1fr)
   }
 
   .side {
+    min-width: 0;
     position: static;
     height: auto;
     flex-direction: row;
@@ -512,6 +508,7 @@ th {
   }
 
   nav {
+    min-width: 0;
     flex-direction: row;
     overflow-x: auto;
     flex: 1 0 100%;
@@ -524,11 +521,151 @@ th {
 
   .user {
     flex-direction: row;
+    flex-wrap: wrap;
+    max-width: 100%;
     align-items: center;
     margin-left: auto
   }
 
   main {
     padding: 16px
+  }
+
+  .top {
+    flex-wrap: wrap;
+  }
+}
+
+/* Levantamiento por una única ubicación vigente. */
+.ayuda-vista {
+  margin: -6px 0 20px;
+  max-width: 80ch;
+}
+
+.ubicacion-selector label {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.ubicacion-selector select {
+  max-width: 560px;
+}
+
+.ubicacion-selector p,
+.buscar-otro p {
+  margin: 10px 0 0;
+}
+
+.titulo-ubicacion {
+  margin: 4px 0 14px;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.filtros-levantamiento {
+  align-items: end;
+}
+
+.filtros-levantamiento label {
+  margin-bottom: 0;
+}
+
+.filtros-levantamiento label:first-child {
+  flex: 2;
+}
+
+summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.buscar-otro[open] > label {
+  margin-top: 14px;
+}
+
+.resultado-otro {
+  flex-wrap: wrap;
+}
+
+.resultado-otro > div {
+  flex: 1 1 230px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.resultado-otro .btn {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.bien {
+  padding: 18px 0;
+}
+
+.bien + .bien {
+  border-top: 1px solid var(--line);
+}
+
+.bien-cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.bien h4 {
+  margin: 0;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.bien p {
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+
+.ubicacion-bien strong {
+  color: var(--accent);
+}
+
+.observaciones-bien {
+  margin: 14px 0;
+}
+
+.cambiar-ubicacion {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.form-ubicacion {
+  max-width: 620px;
+  margin-top: 12px;
+}
+
+.form-ubicacion .btn {
+  margin-top: 8px;
+}
+
+.estado-vacio {
+  padding: 20px 0;
+  text-align: center;
+}
+
+.estado-vacio h3 {
+  margin-bottom: 8px;
+}
+
+@media (max-width: 480px) {
+  .filtros-levantamiento > label {
+    flex: 1 0 100%;
+  }
+
+  .bien-cabecera {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

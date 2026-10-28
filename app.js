@@ -14,27 +14,23 @@ const UBIC = ['Laboratorio 2', 'Oficina 5', 'Biblioteca', 'Aula 3', 'Almacén'];
 const LUGARES = ['Laboratorio 1', 'Laboratorio 2', 'Laboratorio 3', 'Oficina 5', 'Oficina 9', 'Biblioteca', 'Aula 1', 'Aula 2', 'Aula 3', 'Almacén', 'Sala de maestros', 'Dirección', 'Cubículo 1', 'Cubículo 2'];
 let BIENES = Array.from({ length: 48 }, (_, i) => ({
   inv: 'INV-' + String(100 + i).padStart(5, '0'), desc: DESC[i % DESC.length], custodio: CUSTODIOS[i % 4].id,
-  ubic: UBIC[i % UBIC.length], estado: 'pendiente', real: '', obs: ''
+  ubic: UBIC[i % UBIC.length], estado: 'pendiente', obs: ''
 }));
-['encontrado', 'encontrado', 'encontrado', 'no', 'otro', 'encontrado', 'encontrado', 'pendiente'].forEach((e, i) => {
-  BIENES[i].estado = e; if (e === 'otro') BIENES[i].real = 'Oficina 9';
-});
-for (let i = 8; i < 30; i++) BIENES[i].estado = i % 9 === 0 ? 'no' : i % 7 === 0 ? 'otro' : 'encontrado';
-
-const ESTADOS = { encontrado: 'Encontrado', no: 'No encontrado', otro: 'En otro lugar', pendiente: 'Pendiente' };
-const COLOR = { encontrado: '--ok', no: '--no', otro: '--otro', pendiente: '--pen' };
+// Cada bien inicia sin verificar y conserva una sola ubicación vigente: ubic.
+const ESTADOS = { encontrado: 'Encontrado', no: 'No encontrado', pendiente: 'Pendiente de verificar' };
+const COLOR = { encontrado: '--ok', no: '--no', pendiente: '--pen' };
 const RUTAS = { panel: 'Panel principal', importar: 'Importar base', levantamiento: 'Levantamiento', custodios: 'Custodios', reportes: 'Reportes' };
 const PERMISOS = { Administrador: Object.keys(RUTAS), 'Responsable de inventario': Object.keys(RUTAS), Verificador: ['panel', 'levantamiento', 'custodios'] };
 let user = null, chart = null;
 
 const cust = id => CUSTODIOS.find(c => c.id == id)?.nombre ?? '—';
 const conteo = (lista = BIENES) => {
-  const c = { encontrado: 0, no: 0, otro: 0, pendiente: 0 }; lista.forEach(b => c[b.estado]++); return c;
+  const c = { encontrado: 0, no: 0, pendiente: 0 }; lista.forEach(b => c[b.estado]++); return c;
 };
 const badge = e => `<span class="st ${e}">${ESTADOS[e]}</span>`;
 function toast(m) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(t._t); t._t = setTimeout(() => t.hidden = true, 2600); }
 const barra = c => {
-  const n = BIENES.length || 1;
+  const n = Object.values(c).reduce((total, cantidad) => total + cantidad, 0) || 1;
   return `<div class="bar" role="img" aria-label="Avance del levantamiento">${Object.keys(c).map(k => `<i style="width:${c[k] / n * 100}%;background:var(${COLOR[k]})"></i>`).join('')}</div>
      <div class="legend">${Object.keys(c).map(k => `<span><span class="dot" style="background:var(${COLOR[k]})"></span>${ESTADOS[k]}: ${c[k]}</span>`).join('')}</div>`;
 };
@@ -54,13 +50,14 @@ function route() {
   let r = location.hash.slice(1) || 'panel';
   if (!PERMISOS[user.rol].includes(r)) { r = 'panel'; toast('Tu rol no tiene acceso a esa sección'); }
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.r === r));
+  $('#ayuda-levantamiento').hidden = r !== 'levantamiento';
   $('#titulo').textContent = RUTAS[r]; $('#vista').innerHTML = ''; VISTAS[r]();
 }
 
 /* ---------- Vistas ---------- */
 const VISTAS = {
   panel() {
-    const c = conteo(), n = BIENES.length, av = Math.round((n - c.pendiente) / n * 100);
+    const c = conteo(), n = BIENES.length, av = n ? Math.round((n - c.pendiente) / n * 100) : 0;
     $('#vista').innerHTML = `
      <div class="stats">
        <div class="stat"><b>${n}</b><span>Bienes del ejercicio</span></div>
@@ -70,7 +67,7 @@ const VISTAS = {
      <div class="card"><h3>Estado del levantamiento</h3>${barra(c)}</div>
      <div class="actions">
        <a href="#importar"><b>Importar base</b><span>Cargar Excel o CSV</span></a>
-       <a href="#levantamiento"><b>Levantar inventario</b><span>Verificar bienes</span></a>
+       <a href="#levantamiento"><b>Levantar inventario</b><span>Revisar bienes por ubicación</span></a>
        <a href="#custodios"><b>Custodios</b><span>Consultar asignaciones</span></a>
        <a href="#reportes"><b>Reportes</b><span>Consultar resultados</span></a></div>`;
   },
@@ -93,39 +90,128 @@ const VISTAS = {
 
   levantamiento() {
     $('#vista').innerHTML = `
-     <div class="tools">
-       <input id="q" type="search" placeholder="Buscar por número de inventario o descripción" aria-label="Buscar">
-       <select id="fc" aria-label="Custodio"><option value="">Todos los custodios</option>${CUSTODIOS.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('')}</select>
-       <select id="fe" aria-label="Estado"><option value="">Todos los estados</option>${Object.entries(ESTADOS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
-     <div class="card" id="lista"></div>`;
+      <div class="card ubicacion-selector">
+        <label for="fu">Ubicación que vas a revisar</label>
+        <select id="fu" aria-describedby="ubicacion-ayuda"></select>
+        <p class="muted small" id="ubicacion-ayuda">Selecciona un lugar para ver todos sus bienes y registrar la verificación.</p>
+      </div>
+      <div id="resumen-ubicacion" aria-live="polite"></div>
+      <div id="controles-ubicacion" hidden>
+        <div class="tools filtros-levantamiento">
+          <label>Buscar bien<input id="q" type="search" placeholder="Número de inventario o descripción"></label>
+          <label>Custodio<select id="fc"><option value="">Todos los custodios</option>${CUSTODIOS.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('')}</select></label>
+          <label>Estado<select id="fe"><option value="">Todos los estados</option>${Object.entries(ESTADOS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></label>
+        </div>
+        <details class="card buscar-otro">
+          <summary>Buscar bien de otra ubicación</summary>
+          <p class="muted small">Busca un bien para moverlo a la ubicación seleccionada. Después puedes registrar su verificación.</p>
+          <label>Inventario o descripción<input id="q-otro" type="search" placeholder="Buscar en las demás ubicaciones"></label>
+          <div id="resultados-otro" aria-live="polite"></div>
+        </details>
+      </div>
+      <p class="muted small" id="cantidad-bienes" role="status"></p>
+      <div class="card" id="lista"></div>`;
+
+    const selector = $('#fu');
+    const actualizarLugares = (seleccion = '') => {
+      const lugares = lugaresDisponibles();
+      if (BIENES.some(b => !b.ubic)) lugares.push('Sin ubicación');
+      selector.innerHTML = '<option value="">Selecciona una ubicación para comenzar</option>' + lugares.map(l => {
+        const n = BIENES.filter(b => ubicacion(b) === l).length;
+        return `<option value="${esc(l)}">${esc(l)} (${n})</option>`;
+      }).join('');
+      selector.value = seleccion;
+    };
+    const pintarOtros = () => {
+      const q = $('#q-otro').value.trim().toLocaleLowerCase('es');
+      const resultados = $('#resultados-otro');
+      if (!q) { resultados.innerHTML = '<p class="muted small">Escribe el inventario o la descripción del bien que encontraste.</p>'; return; }
+      const otros = BIENES.map((b, i) => [b, i]).filter(([b]) => ubicacion(b) !== selector.value && `${b.inv} ${b.desc}`.toLocaleLowerCase('es').includes(q));
+      resultados.innerHTML = otros.map(([b, i]) => `<div class="item resultado-otro">
+        <div><h4>${esc(b.inv)} · ${esc(b.desc)}</h4><span class="muted small">Ubicación: ${esc(ubicacion(b))} · Custodio: ${esc(cust(b.custodio))}</span></div>
+        <button type="button" class="btn" data-traer="${i}">Mover a ${esc(selector.value)}</button>
+      </div>`).join('') || '<p class="muted small">No hay coincidencias en otras ubicaciones.</p>';
+    };
     const pintar = () => {
-      const q = $('#q').value.toLowerCase(), fc = $('#fc').value, fe = $('#fe').value;
-      const l = BIENES.map((b, i) => [b, i]).filter(([b]) => (!q || (b.inv + b.desc).toLowerCase().includes(q)) && (!fc || b.custodio == fc) && (!fe || b.estado === fe));
-      $('#lista').innerHTML = l.slice(0, 25).map(([b, i]) => `<div class="item"><div style="flex:1">
-         <h4>${esc(b.inv)} · ${esc(b.desc)}</h4>
-         <span class="muted small">Custodio: ${esc(cust(b.custodio))} · Ubicación registrada: ${esc(b.ubic)}</span>
-         <div class="choices">${Object.entries(ESTADOS).map(([k, v]) => `<button class="btn ${b.estado === k ? 'sel' : ''}" data-i="${i}" data-e="${k}">${v}</button>`).join('')}</div>
-         ${b.estado === 'otro' ? bloqueUbic(b, i) : ''}
-         ${b.estado !== 'pendiente' ? `<label style="margin:10px 0 0">Observaciones<input data-o="${i}" value="${esc(b.obs)}"></label>` : ''}
-         </div></div>`).join('') || '<p class="muted">Ningún bien coincide con la búsqueda.</p>';
-      if (l.length > 25) $('#lista').insertAdjacentHTML('beforeend', `<p class="muted small">Mostrando 25 de ${l.length}. Afina la búsqueda.</p>`);
+      const lugar = selector.value;
+      $('#controles-ubicacion').hidden = !lugar;
+      if (!lugar) {
+        $('#resumen-ubicacion').innerHTML = '';
+        $('#cantidad-bienes').textContent = '';
+        $('#lista').innerHTML = '<div class="estado-vacio"><h3>Comienza por una ubicación</h3><p class="muted">Elige el lugar que vas a revisar en el selector de arriba.</p></div>';
+        return;
+      }
+      const bienesLugar = BIENES.filter(b => ubicacion(b) === lugar), c = conteo(bienesLugar);
+      const avance = bienesLugar.length ? Math.round((bienesLugar.length - c.pendiente) / bienesLugar.length * 100) : 0;
+      $('#resumen-ubicacion').innerHTML = `<h3 class="titulo-ubicacion">Levantamiento de ${esc(lugar)}</h3>
+        <div class="stats">
+          <div class="stat"><b>${bienesLugar.length}</b><span>Bienes en esta ubicación</span></div>
+          <div class="stat"><b>${c.pendiente}</b><span>Pendientes de verificar</span></div>
+          <div class="stat"><b>${c.encontrado}</b><span>Encontrados</span></div>
+          <div class="stat"><b>${c.no}</b><span>No encontrados</span></div>
+          <div class="stat"><b>${avance}%</b><span>Avance de verificación</span></div>
+        </div>`;
+      const q = $('#q').value.trim().toLocaleLowerCase('es'), fc = $('#fc').value, fe = $('#fe').value;
+      const lista = BIENES.map((b, i) => [b, i]).filter(([b]) => ubicacion(b) === lugar &&
+        (!q || `${b.inv} ${b.desc}`.toLocaleLowerCase('es').includes(q)) && (!fc || b.custodio == fc) && (!fe || b.estado === fe));
+      $('#cantidad-bienes').textContent = `Mostrando ${lista.length} de ${bienesLugar.length} bienes en ${lugar}.`;
+      $('#lista').innerHTML = lista.map(([b, i]) => `<article class="bien" data-bien="${esc(b.inv)}">
+        <div class="bien-cabecera"><h4>${esc(b.inv)} · ${esc(b.desc)}</h4>${badge(b.estado)}</div>
+        <p class="ubicacion-bien">Ubicación: <strong>${esc(ubicacion(b))}</strong></p>
+        <p class="muted small">Custodio: ${esc(cust(b.custodio))}</p>
+        <div class="choices" role="group" aria-label="Verificación de ${esc(b.inv)}">${Object.entries(ESTADOS).map(([k, v]) => `<button type="button" class="btn ${b.estado === k ? 'sel' : ''}" aria-pressed="${b.estado === k}" data-i="${i}" data-e="${k}">${v}</button>`).join('')}</div>
+        <label class="observaciones-bien">Observaciones<input data-o="${i}" value="${esc(b.obs)}" placeholder="Notas de la revisión"></label>
+        ${bloqueUbic(b, i)}
+      </article>`).join('') || `<div class="estado-vacio"><p class="muted">${bienesLugar.length ? 'Ningún bien coincide con los filtros seleccionados.' : 'Esta ubicación todavía no tiene bienes. Puedes buscar uno de otra ubicación para moverlo aquí.'}</p></div>`;
+      pintarOtros();
+    };
+    const mover = (i, destino) => {
+      const b = BIENES[i];
+      const lugar = registrarLugar(destino);
+      if (!lugar) return toast('Selecciona o escribe una ubicación');
+      if (b.ubic === lugar) return toast('El bien ya está en esa ubicación');
+      b.ubic = lugar;
+      // Cambiar de ubicación y verificar son acciones independientes.
+      actualizarLugares(lugar);
+      ['#q', '#fc', '#fe', '#q-otro'].forEach(s => $(s).value = '');
+      pintar();
+      toast(`${b.inv}: ubicación actualizada a ${lugar}`);
+    };
+    selector.onchange = () => {
+      ['#q', '#fc', '#fe', '#q-otro'].forEach(s => $(s).value = '');
+      pintar();
     };
     ['#q', '#fc', '#fe'].forEach(s => $(s).oninput = pintar);
+    $('#q-otro').oninput = pintarOtros;
+    $('#resultados-otro').onclick = e => {
+      const boton = e.target.closest('[data-traer]');
+      if (boton && selector.value && selector.value !== 'Sin ubicación') mover(Number(boton.dataset.traer), selector.value);
+      else if (boton) toast('Selecciona una ubicación de destino');
+    };
     $('#lista').onclick = e => {
-      const b = e.target.closest('[data-e]'); if (!b) return;
-      BIENES[b.dataset.i].estado = b.dataset.e; toast('Guardado: ' + ESTADOS[b.dataset.e]); pintar();
+      const boton = e.target.closest('[data-e]'); if (!boton) return;
+      BIENES[boton.dataset.i].estado = boton.dataset.e;
+      pintar(); toast('Verificación registrada: ' + ESTADOS[boton.dataset.e]);
     };
     $('#lista').onchange = e => {
-      if (e.target.dataset.s === undefined) return;
-      const b = BIENES[e.target.dataset.s], v = e.target.value;
-      b.manual = v === '__otro'; b.real = b.manual ? '' : v; pintar();
-      if (b.manual) $('#lista').querySelector(`[data-t="${e.target.dataset.s}"]`)?.focus();
+      if (!e.target.matches('[data-destino]')) return;
+      const form = e.target.closest('form'), manual = e.target.value === '__nuevo';
+      const campo = $('[data-nombre-lugar]', form);
+      campo.hidden = !manual;
+      $('input', campo).disabled = !manual;
+      if (manual) $('input', campo).focus();
+    };
+    $('#lista').onsubmit = e => {
+      const form = e.target.closest('[data-mover]'); if (!form) return;
+      e.preventDefault();
+      const destino = $('[data-destino]', form).value;
+      const nombre = destino === '__nuevo' ? $('[name="nuevo-lugar"]', form).value : destino;
+      mover(Number(form.dataset.mover), nombre);
     };
     $('#lista').oninput = e => {
-      if (e.target.dataset.t) BIENES[e.target.dataset.t].real = e.target.value;
-      if (e.target.dataset.o) BIENES[e.target.dataset.o].obs = e.target.value;
+      if (e.target.dataset.o !== undefined) BIENES[e.target.dataset.o].obs = e.target.value;
     };
-    pintar();
+    actualizarLugares(); pintar();
   },
 
   custodios() {
@@ -144,21 +230,21 @@ const VISTAS = {
     $('#tb').onclick = e => {
       const id = e.target.dataset.c; if (!id) return;
       const d = $('#det'); d.hidden = false;
-      d.innerHTML = `<h3>Bienes de ${esc(cust(id))}</h3><div class="tbl"><table><thead><tr><th>Inventario</th><th>Descripción</th><th>Ubicación</th><th>Estado</th></tr></thead><tbody>${BIENES.filter(b => b.custodio == id).map(b => `<tr><td>${esc(b.inv)}</td><td>${esc(b.desc)}</td><td>${esc(b.ubic)}</td><td>${badge(b.estado)}</td></tr>`).join('')}</tbody></table></div>`;
+      d.innerHTML = `<h3>Bienes de ${esc(cust(id))}</h3><div class="tbl"><table><thead><tr><th>Inventario</th><th>Descripción</th><th>Ubicación</th><th>Estado</th></tr></thead><tbody>${BIENES.filter(b => b.custodio == id).map(b => `<tr><td>${esc(b.inv)}</td><td>${esc(b.desc)}</td><td>${esc(ubicacion(b))}</td><td>${badge(b.estado)}</td></tr>`).join('')}</tbody></table></div>`;
     };
   },
 
   reportes() {
     const c = conteo();
-    const fila = (n, l) => { const k = conteo(l); return `<tr><td>${esc(n)}</td><td>${l.length}</td><td>${k.encontrado}</td><td>${k.no}</td><td>${k.otro}</td><td>${k.pendiente}</td></tr>`; };
-    const disc = BIENES.filter(b => b.estado === 'no' || b.estado === 'otro');
+    const fila = (n, l) => { const k = conteo(l); return `<tr><td>${esc(n)}</td><td>${l.length}</td><td>${k.encontrado}</td><td>${k.no}</td><td>${k.pendiente}</td></tr>`; };
+    const disc = BIENES.filter(b => b.estado === 'no');
     $('#vista').innerHTML = `
      <div class="tools"><button class="btn primary" id="csv">Exportar discrepancias (CSV)</button></div>
      <div class="card"><h3>Resultados generales</h3><div style="max-width:420px;height:240px"><canvas id="ch"></canvas></div></div>
-     <div class="card tbl"><h3>Resultados por custodio</h3><table><thead><tr><th>Custodio</th><th>Total</th><th>Encontrados</th><th>No encontrados</th><th>En otro lugar</th><th>Pendientes</th></tr></thead><tbody>
+     <div class="card tbl"><h3>Resultados por custodio</h3><table><thead><tr><th>Custodio</th><th>Total</th><th>Encontrados</th><th>No encontrados</th><th>Pendientes</th></tr></thead><tbody>
        ${CUSTODIOS.map(x => fila(x.nombre, BIENES.filter(b => b.custodio == x.id))).join('')}</tbody></table></div>
-     <div class="card tbl"><h3>Bienes con discrepancias (${disc.length})</h3><table><thead><tr><th>Inventario</th><th>Descripción</th><th>Custodio</th><th>Estado</th><th>Ubicación real</th></tr></thead><tbody>
-       ${disc.map(b => `<tr><td>${esc(b.inv)}</td><td>${esc(b.desc)}</td><td>${esc(cust(b.custodio))}</td><td>${badge(b.estado)}</td><td>${esc(b.real || '—')}</td></tr>`).join('')}</tbody></table></div>`;
+     <div class="card tbl"><h3>Bienes con discrepancias (${disc.length})</h3><table><thead><tr><th>Inventario</th><th>Descripción</th><th>Custodio</th><th>Estado</th><th>Ubicación</th></tr></thead><tbody>
+       ${disc.map(b => `<tr><td>${esc(b.inv)}</td><td>${esc(b.desc)}</td><td>${esc(cust(b.custodio))}</td><td>${badge(b.estado)}</td><td>${esc(ubicacion(b))}</td></tr>`).join('')}</tbody></table></div>`;
     const css = getComputedStyle(document.documentElement);
     if (chart) chart.destroy();
     chart = new Chart($('#ch'), {
@@ -169,8 +255,8 @@ const VISTAS = {
       options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: css.getPropertyValue('--ink').trim() } } } }
     });
     $('#csv').onclick = () => {
-      const filas = [['Inventario', 'Descripcion', 'Custodio', 'Estado', 'Ubicacion registrada', 'Ubicacion real', 'Observaciones'],
-      ...disc.map(b => [b.inv, b.desc, cust(b.custodio), ESTADOS[b.estado], b.ubic, b.real, b.obs])];
+      const filas = [['Inventario', 'Descripcion', 'Custodio', 'Estado', 'Ubicacion', 'Observaciones'],
+      ...disc.map(b => [b.inv, b.desc, cust(b.custodio), ESTADOS[b.estado], ubicacion(b), b.obs])];
       const txt = '\ufeff' + filas.map(r => r.map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')).join('\n');
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'text/csv' }));
       a.download = 'discrepancias-2026.csv'; a.click();
@@ -178,14 +264,33 @@ const VISTAS = {
   }
 };
 
+// Todas las vistas consultan ubic; no existe una segunda ubicación por bien.
+const ubicacion = b => b.ubic || 'Sin ubicación';
+function lugaresDisponibles() {
+  return [...new Set([...LUGARES, ...BIENES.map(b => b.ubic)].map(l => String(l ?? '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'es'));
+}
+function registrarLugar(nombre) {
+  const limpio = String(nombre ?? '').trim();
+  if (!limpio) return '';
+  const existente = lugaresDisponibles().find(l => l.toLocaleLowerCase('es') === limpio.toLocaleLowerCase('es'));
+  if (existente) return existente;
+  LUGARES.push(limpio);
+  return limpio;
+}
 function bloqueUbic(b, i) {
-  const manual = b.manual || (b.real && !LUGARES.includes(b.real));
-  const val = manual ? '__otro' : b.real;
-  return `<label style="margin-top:10px">Ubicación real
-       <select data-s="${i}"><option value="">Selecciona dónde está</option>
-         ${LUGARES.map(l => `<option ${val === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}
-         <option value="__otro" ${manual ? 'selected' : ''}>Otro: no está en la lista (escribir)</option></select></label>
-       ${manual ? `<label style="margin-top:8px">Escribe la ubicación<input data-t="${i}" value="${esc(b.real)}" placeholder="Ej. Bodega externa"></label>` : ''}`;
+  return `<details class="cambiar-ubicacion"><summary>Cambiar ubicación</summary>
+    <form class="form-ubicacion" data-mover="${i}">
+      <label>Ubicación de destino<select data-destino required>
+        <option value="" ${b.ubic ? '' : 'selected'} disabled>Selecciona una ubicación</option>
+        ${lugaresDisponibles().map(l => `<option value="${esc(l)}" ${b.ubic === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+        <option value="__nuevo">Otro: no está en la lista (escribir)</option>
+      </select></label>
+      <label data-nombre-lugar hidden>Nombre de la ubicación<input name="nuevo-lugar" placeholder="Ej. Bodega externa" required disabled></label>
+      <p class="muted small">Al guardar, el bien aparecerá únicamente en el destino y se abrirá esa ubicación. Su estado de verificación se conserva.</p>
+      <button class="btn primary" type="submit">Guardar ubicación</button>
+    </form>
+  </details>`;
 }
 
 /* ---------- Importación: lectura, mapeo y vista previa ---------- */
@@ -235,8 +340,8 @@ function vistaPrevia(filas, nombre) {
         const nombreC = m.custodio ? String(r[m.custodio]).trim() : '';
         let c = CUSTODIOS.find(x => x.nombre === nombreC);
         if (!c && nombreC) { c = { id: CUSTODIOS.length + 1, nombre: nombreC, empleado: '—', area: '—' }; CUSTODIOS.push(c); }
-        const ub = m.ubic ? String(r[m.ubic]).trim() : ''; if (ub && !LUGARES.includes(ub)) LUGARES.push(ub);
-        BIENES.push({ inv: id, desc: m.desc ? r[m.desc] : '', custodio: c ? c.id : 0, ubic: m.ubic ? r[m.ubic] : '', estado: 'pendiente', real: '', obs: '' }); n++;
+        const ub = registrarLugar(m.ubic ? r[m.ubic] : '');
+        BIENES.push({ inv: id, desc: m.desc ? r[m.desc] : '', custodio: c ? c.id : 0, ubic: ub, estado: 'pendiente', obs: '' }); n++;
       });
       toast(n + ' bienes importados como Pendientes'); location.hash = 'panel';
     };
