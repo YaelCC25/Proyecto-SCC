@@ -183,6 +183,13 @@ const VISTAS = {
     $('#nuevo-bien').onclick = () => abrirRegistro();
     $('#cancelar-registro').onclick = () => { cerrarRegistro(); $('#nuevo-bien').focus(); };
     formulario.oninput = () => $('#registro-error').hidden = true;
+    formulario.onkeydown = e => {
+      if (e.key !== 'Enter' || e.isComposing || !e.target.matches('input')) return;
+      e.preventDefault();
+      if (e.repeat) return;
+      const boton = editando === null ? $('[data-seguir]', formulario) : $('button[type="submit"]', formulario);
+      formulario.requestSubmit(boton);
+    };
     formulario.onsubmit = e => {
       e.preventDefault();
       const inv = $('#registro-inv').value.trim(), desc = $('#registro-desc').value.trim();
