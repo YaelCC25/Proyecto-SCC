@@ -689,6 +689,54 @@ summary {
   margin-bottom: 6px;
 }
 
+.revision-aviso,
+.revision-ok {
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+}
+
+.revision-aviso,
+.st.alerta {
+  color: var(--no);
+  background: var(--card);
+}
+
+.revision-ok {
+  color: var(--ok);
+}
+
+#alertas-revision {
+  border-color: var(--no);
+}
+
+.comparacion-asignacion {
+  margin-bottom: 14px;
+}
+
+.comparacion-asignacion td,
+.comparacion-asignacion th {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+#revision-form > p,
+#edicion-form > p {
+  max-width: 90ch;
+}
+
+@media (prefers-color-scheme: dark) {
+  .revision-aviso,
+  .st.alerta {
+    color: #ffb4ab;
+  }
+
+  .revision-ok {
+    color: #8bdaa1;
+  }
+}
+
 .registro-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
