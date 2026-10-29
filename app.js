@@ -91,28 +91,16 @@ const VISTAS = {
   levantamiento() {
     $('#vista').innerHTML = `
       <div class="card registro-manual">
-        <div class="registro-cabecera">
-          <div><h3>Captura de bienes</h3><p class="muted small">Registra lo que te dicten: bien, ubicación y custodio. Puedes seleccionar datos existentes o escribir nuevos.</p></div>
-          <button type="button" class="btn primary" id="nuevo-bien" aria-controls="registro-form" aria-expanded="false">Registrar bien manualmente</button>
-        </div>
-        <form id="registro-form" class="registro-form" aria-labelledby="registro-titulo" hidden>
-          <h3 id="registro-titulo">Registrar un bien</h3>
-          <p class="muted small">Los bienes nuevos quedan pendientes de verificar. Todos los campos, excepto observaciones, son obligatorios.</p>
+        <form id="registro-form" class="registro-form" aria-labelledby="registro-titulo">
+          <h3 id="registro-titulo">Captura de bienes</h3>
+          <p class="muted small" id="registro-ayuda">Selecciona custodio y ubicación, escribe el número de inventario y presiona Enter para guardar. Las selecciones se conservan para el siguiente bien.</p>
           <div class="registro-grid">
-            <label>Número de inventario<input id="registro-inv" required placeholder="Ej. INV-00148"></label>
-            <label>Descripción del bien<input id="registro-desc" required placeholder="Ej. Monitor Dell de 24 pulgadas"></label>
-            <label>Ubicación<input id="registro-ubic" list="registro-lugares" required placeholder="Selecciona o escribe la ubicación" autocomplete="off"></label>
-            <label>Custodio<input id="registro-custodio" list="registro-custodios" required placeholder="Selecciona o escribe el nombre" autocomplete="off"></label>
+            <label>Custodio<select id="registro-custodio" required><option value="">Selecciona un custodio</option></select></label>
+            <label>Ubicación<select id="registro-ubic" required><option value="">Selecciona una ubicación</option></select></label>
+            <label>Número de inventario<input id="registro-inv" required placeholder="Ej. INV-00148" autocomplete="off" aria-describedby="registro-ayuda"></label>
           </div>
-          <datalist id="registro-lugares"></datalist>
-          <datalist id="registro-custodios"></datalist>
-          <label>Observaciones<input id="registro-obs" placeholder="Notas del registro (opcional)"></label>
           <p id="registro-error" class="note" role="alert" hidden></p>
-          <div class="registro-acciones">
-            <button type="submit" class="btn primary">Guardar bien</button>
-            <button type="submit" class="btn" data-seguir>Guardar y capturar otro</button>
-            <button type="button" class="btn" id="cancelar-registro">Cancelar</button>
-          </div>
+          <button type="button" class="btn" id="cancelar-registro" hidden>Cancelar edición</button>
         </form>
       </div>
       <div class="card ubicacion-selector">
@@ -141,6 +129,9 @@ const VISTAS = {
     const selector = $('#fu');
     const actualizarLugares = (seleccion = '') => {
       const lugares = lugaresDisponibles();
+      const captura = $('#registro-ubic'), elegida = captura.value;
+      captura.innerHTML = '<option value="">Selecciona una ubicación</option>' + lugares.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
+      captura.value = elegida;
       if (BIENES.some(b => !b.ubic)) lugares.push('Sin ubicación');
       selector.innerHTML = '<option value="">Todas las ubicaciones</option>' + lugares.map(l => {
         const n = BIENES.filter(b => ubicacion(b) === l && (!$('#fc').value || b.custodio == $('#fc').value)).length;
@@ -152,74 +143,64 @@ const VISTAS = {
       const filtro = $('#fc'), elegido = filtro.value;
       filtro.innerHTML = '<option value="">Todos los custodios</option>' + CUSTODIOS.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
       filtro.value = elegido;
-      $('#registro-custodios').innerHTML = CUSTODIOS.map(c => `<option value="${esc(c.nombre)}"></option>`).join('');
+      const captura = $('#registro-custodio'), seleccionado = captura.value;
+      captura.innerHTML = '<option value="">Selecciona un custodio</option>' + CUSTODIOS.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join('');
+      captura.value = seleccionado;
     };
     const formulario = $('#registro-form');
     let editando = null;
-    const abrirRegistro = (i = null) => {
+    const abrirRegistro = (i = null, contexto = {}) => {
       editando = i;
       const b = i === null ? null : BIENES[i];
       formulario.reset();
       $('#registro-error').hidden = true;
-      $('#registro-titulo').textContent = b ? `Editar ${b.inv}` : 'Registrar un bien';
+      $('#registro-titulo').textContent = b ? `Editar ${b.inv}` : 'Captura de bienes';
       $('#registro-inv').value = b?.inv ?? '';
-      $('#registro-desc').value = b?.desc ?? '';
-      $('#registro-ubic').value = b ? b.ubic : selector.value === 'Sin ubicación' ? '' : selector.value;
-      $('#registro-custodio').value = b ? (b.custodio ? cust(b.custodio) : '') : ($('#fc').value ? cust($('#fc').value) : '');
-      $('#registro-obs').value = b?.obs ?? '';
-      $('#registro-lugares').innerHTML = lugaresDisponibles().map(l => `<option value="${esc(l)}"></option>`).join('');
+      $('#registro-ubic').value = b ? b.ubic : (contexto.ubic ?? (selector.value === 'Sin ubicación' ? '' : selector.value));
       actualizarCustodios();
-      formulario.hidden = false;
-      $('#nuevo-bien').setAttribute('aria-expanded', 'true');
+      $('#registro-custodio').value = b ? String(b.custodio) : (contexto.custodio ?? $('#fc').value);
+      $('#cancelar-registro').hidden = !b;
       $('#registro-inv').focus();
     };
-    const cerrarRegistro = () => {
-      formulario.reset();
-      formulario.hidden = true;
-      editando = null;
-      $('#registro-error').hidden = true;
-      $('#nuevo-bien').setAttribute('aria-expanded', 'false');
-    };
-    $('#nuevo-bien').onclick = () => abrirRegistro();
-    $('#cancelar-registro').onclick = () => { cerrarRegistro(); $('#nuevo-bien').focus(); };
+    $('#cancelar-registro').onclick = () => abrirRegistro(null, { ubic: $('#registro-ubic').value, custodio: $('#registro-custodio').value });
     formulario.oninput = () => $('#registro-error').hidden = true;
+    const enfocarInventario = () => {
+      if ($('#registro-ubic').value && $('#registro-custodio').value) $('#registro-inv').focus();
+    };
+    $('#registro-ubic').onchange = enfocarInventario;
+    $('#registro-custodio').onchange = enfocarInventario;
     formulario.onkeydown = e => {
-      if (e.key !== 'Enter' || e.isComposing || !e.target.matches('input')) return;
+      if (e.key !== 'Enter' || e.isComposing || e.target.id !== 'registro-inv') return;
       e.preventDefault();
       if (e.repeat) return;
-      const boton = editando === null ? $('[data-seguir]', formulario) : $('button[type="submit"]', formulario);
-      formulario.requestSubmit(boton);
+      formulario.requestSubmit();
     };
     formulario.onsubmit = e => {
       e.preventDefault();
-      const inv = $('#registro-inv').value.trim(), desc = $('#registro-desc').value.trim();
-      const nombreLugar = $('#registro-ubic').value.trim(), nombreCustodio = $('#registro-custodio').value.trim();
+      const inv = $('#registro-inv').value.trim(), nombreLugar = $('#registro-ubic').value;
+      const custodio = CUSTODIOS.find(c => String(c.id) === $('#registro-custodio').value);
       const error = (mensaje, campo) => {
         $('#registro-error').textContent = mensaje;
         $('#registro-error').hidden = false;
         $(campo).focus();
       };
       if (!inv) return error('Escribe el número de inventario.', '#registro-inv');
-      if (!desc) return error('Escribe la descripción del bien.', '#registro-desc');
-      if (!nombreLugar) return error('Selecciona o escribe la ubicación.', '#registro-ubic');
-      if (!nombreCustodio) return error('Selecciona o escribe el custodio.', '#registro-custodio');
+      if (!nombreLugar) return error('Selecciona la ubicación.', '#registro-ubic');
+      if (!custodio) return error('Selecciona el custodio.', '#registro-custodio');
       const duplicado = BIENES.some((b, i) => i !== editando && b.inv.trim().toLocaleLowerCase('es') === inv.toLocaleLowerCase('es'));
       if (duplicado) return error('Ese número de inventario ya existe. Busca el bien y utiliza Editar datos.', '#registro-inv');
-      const lugar = registrarLugar(nombreLugar), custodio = registrarCustodio(nombreCustodio);
-      const datos = { inv, desc, ubic: lugar, custodio: custodio.id, obs: $('#registro-obs').value.trim() };
+      const datos = { inv, ubic: nombreLugar, custodio: custodio.id };
       const esNuevo = editando === null;
-      if (esNuevo) BIENES.push({ ...datos, estado: 'pendiente' });
+      if (esNuevo) BIENES.push({ ...datos, desc: '', obs: '', estado: 'pendiente' });
       else Object.assign(BIENES[editando], datos);
-      const continuar = e.submitter?.hasAttribute('data-seguir');
       const porCustodio = Boolean($('#fc').value);
-      cerrarRegistro();
       actualizarCustodios();
       $('#fc').value = porCustodio ? String(custodio.id) : '';
-      actualizarLugares(lugar);
+      actualizarLugares(nombreLugar);
       ['#q', '#fe', '#q-otro'].forEach(s => $(s).value = '');
       pintar();
-      toast(esNuevo ? `${inv}: bien registrado en ${lugar}, pendiente de verificar` : `${inv}: datos actualizados`);
-      if (continuar) { abrirRegistro(); $('#registro-custodio').value = custodio.nombre; }
+      toast(esNuevo ? `${inv}: bien registrado en ${nombreLugar}, pendiente de verificar` : `${inv}: datos actualizados`);
+      abrirRegistro(null, { ubic: nombreLugar, custodio: String(custodio.id) });
     };
     const pintarOtros = () => {
       const q = $('#q-otro').value.trim().toLocaleLowerCase('es');
@@ -228,7 +209,7 @@ const VISTAS = {
       if (!q) { resultados.innerHTML = '<p class="muted small">Escribe el inventario o la descripción del bien que encontraste.</p>'; return; }
       const otros = BIENES.map((b, i) => [b, i]).filter(([b]) => ubicacion(b) !== selector.value && (!$('#fc').value || b.custodio == $('#fc').value) && `${b.inv} ${b.desc}`.toLocaleLowerCase('es').includes(q));
       resultados.innerHTML = otros.map(([b, i]) => `<div class="item resultado-otro">
-        <div><h4>${esc(b.inv)} · ${esc(b.desc)}</h4><span class="muted small">Ubicación: ${esc(ubicacion(b))} · Custodio: ${esc(cust(b.custodio))}</span></div>
+        <div><h4>${esc(b.inv)}${b.desc ? ` · ${esc(b.desc)}` : ''}</h4><span class="muted small">Ubicación: ${esc(ubicacion(b))} · Custodio: ${esc(cust(b.custodio))}</span></div>
         <button type="button" class="btn" data-traer="${i}">Mover a ${esc(selector.value)}</button>
       </div>`).join('') || '<p class="muted small">No hay coincidencias en otras ubicaciones.</p>';
     };
@@ -261,7 +242,7 @@ const VISTAS = {
         (!q || `${b.inv} ${b.desc}`.toLocaleLowerCase('es').includes(q)) && (!fe || b.estado === fe));
       $('#cantidad-bienes').textContent = `Mostrando ${lista.length} de ${bienesSeleccion.length} bienes: ${contexto}.`;
       $('#lista').innerHTML = lista.map(([b, i]) => `<article class="bien" data-bien="${esc(b.inv)}">
-        <div class="bien-cabecera"><h4>${esc(b.inv)} · ${esc(b.desc)}</h4><div class="bien-acciones">${badge(b.estado)}<button type="button" class="link" data-editar="${i}">Editar datos</button></div></div>
+        <div class="bien-cabecera"><h4>${esc(b.inv)}${b.desc ? ` · ${esc(b.desc)}` : ''}</h4><div class="bien-acciones">${badge(b.estado)}<button type="button" class="link" data-editar="${i}">Editar datos</button></div></div>
         <p class="ubicacion-bien">Ubicación: <strong>${esc(ubicacion(b))}</strong></p>
         <p class="muted small">Custodio: ${esc(cust(b.custodio))}</p>
         <div class="choices" role="group" aria-label="Verificación de ${esc(b.inv)}">${Object.entries(ESTADOS).map(([k, v]) => `<button type="button" class="btn ${b.estado === k ? 'sel' : ''}" aria-pressed="${b.estado === k}" data-i="${i}" data-e="${k}">${v}</button>`).join('')}</div>
@@ -323,7 +304,7 @@ const VISTAS = {
     $('#lista').oninput = e => {
       if (e.target.dataset.o !== undefined) BIENES[e.target.dataset.o].obs = e.target.value;
     };
-    actualizarLugares(); pintar();
+    actualizarLugares(); pintar(); abrirRegistro();
   },
 
   custodios() {
