@@ -16,7 +16,7 @@ let BIENES = Array.from({ length: 48 }, (_, i) => ({
   inv: 'INV-' + String(100 + i).padStart(5, '0'), desc: DESC[i % DESC.length], custodio: CUSTODIOS[i % 4].id,
   ubic: UBIC[i % UBIC.length], estado: 'pendiente', obs: ''
 }));
-// Cada bien inicia sin verificar y conserva una sola ubicación vigente: ubic.
+// Los bienes de ejemplo inician sin verificar y conservan una sola ubicación vigente: ubic.
 const ESTADOS = { encontrado: 'Encontrado', no: 'No encontrado', pendiente: 'Pendiente de verificar' };
 const COLOR = { encontrado: '--ok', no: '--no', pendiente: '--pen' };
 const RUTAS = { panel: 'Panel principal', importar: 'Importar base', levantamiento: 'Levantamiento', custodios: 'Custodios', reportes: 'Reportes' };
@@ -191,7 +191,7 @@ const VISTAS = {
       if (duplicado) return error('Ese número de inventario ya existe. Busca el bien y utiliza Editar datos.', '#registro-inv');
       const datos = { inv, ubic: nombreLugar, custodio: custodio.id };
       const esNuevo = editando === null;
-      if (esNuevo) BIENES.push({ ...datos, desc: '', obs: '', estado: 'pendiente' });
+      if (esNuevo) BIENES.push({ ...datos, desc: '', obs: '', estado: 'encontrado' });
       else Object.assign(BIENES[editando], datos);
       const porCustodio = Boolean($('#fc').value);
       actualizarCustodios();
@@ -199,7 +199,7 @@ const VISTAS = {
       actualizarLugares(nombreLugar);
       ['#q', '#fe', '#q-otro'].forEach(s => $(s).value = '');
       pintar();
-      toast(esNuevo ? `${inv}: bien registrado en ${nombreLugar}, pendiente de verificar` : `${inv}: datos actualizados`);
+      toast(esNuevo ? `${inv}: registrado como Encontrado en ${nombreLugar}` : `${inv}: datos actualizados`);
       abrirRegistro(null, { ubic: nombreLugar, custodio: String(custodio.id) });
     };
     const pintarOtros = () => {
