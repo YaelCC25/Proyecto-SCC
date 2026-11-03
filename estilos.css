@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --bg: #f4f5f2;
   --card: #fff;
   --ink: #1c2a2e;
@@ -8,19 +9,32 @@
   --accent-d: #0a4f4f;
   --ok: #2f7d4f;
   --no: #b3392f;
-  --pen: #6b7780
+  --pen: #6b7780;
+  --accent-ink: #fff;
+  --side-bg: #1c2a2e;
+  --note-bg: #fff7e0;
+  --note-ink: #5a4300;
+  --note-line: #ecd68a;
+  --revision-ok: var(--ok);
+  --revision-aviso: var(--no)
 }
 
-@media(prefers-color-scheme:dark) {
-  :root {
-    --bg: #121a1c;
-    --card: #1b2629;
-    --ink: #e6ecea;
-    --muted: #93a3a6;
-    --line: #2c3a3d;
-    --accent: #3fb5b0;
-    --accent-d: #5fd0cb
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121a1c;
+  --card: #1b2629;
+  --ink: #e6ecea;
+  --muted: #93a3a6;
+  --line: #2c3a3d;
+  --accent: #3fb5b0;
+  --accent-d: #5fd0cb;
+  --accent-ink: #102022;
+  --side-bg: #0c1315;
+  --note-bg: #2f2a14;
+  --note-ink: #ecd68a;
+  --note-line: #5a4d1c;
+  --revision-ok: #8bdaa1;
+  --revision-aviso: #ffb4ab
 }
 
 * {
@@ -102,7 +116,7 @@ label>textarea {
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff
+  color: var(--accent-ink)
 }
 
 .btn.primary:hover {
@@ -144,9 +158,77 @@ label>textarea {
   margin: 0 0 20px
 }
 
-.login-box .btn {
+.login-box > .btn {
   width: 100%;
   margin: 6px 0 14px
+}
+
+.login-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 20px
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px
+}
+
+.theme-toggle svg,
+.password-toggle svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0
+}
+
+.theme-sun,
+:root[data-theme="dark"] .theme-moon,
+.eye-slash {
+  display: none
+}
+
+:root[data-theme="dark"] .theme-sun,
+.password-toggle[aria-pressed="true"] .eye-slash {
+  display: block
+}
+
+.password-label {
+  margin-bottom: 4px
+}
+
+.password-field {
+  position: relative;
+  margin-bottom: 12px
+}
+
+.password-field input {
+  padding-right: 52px
+}
+
+.password-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 0 6px 6px 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer
+}
+
+.password-toggle:hover {
+  color: var(--accent)
+}
+
+.password-toggle:focus-visible {
+  outline-offset: -4px
 }
 
 .app {
@@ -156,7 +238,7 @@ label>textarea {
 }
 
 .side {
-  background: var(--ink);
+  background: var(--side-bg);
   color: #e6ecea;
   padding: 22px 14px;
   display: flex;
@@ -165,12 +247,6 @@ label>textarea {
   position: sticky;
   top: 0;
   height: 100vh
-}
-
-@media(prefers-color-scheme:dark) {
-  .side {
-    background: #0c1315
-  }
 }
 
 .brand {
@@ -199,7 +275,7 @@ nav a:hover {
 
 nav a.on {
   background: var(--accent);
-  color: #fff
+  color: var(--accent-ink)
 }
 
 .user {
@@ -231,6 +307,13 @@ main {
 
 .top h2 {
   font-size: 24px
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px
 }
 
 .chip {
@@ -455,21 +538,13 @@ th {
 }
 
 .note {
-  background: #fff7e0;
-  color: #5a4300;
-  border: 1px solid #ecd68a;
+  background: var(--note-bg);
+  color: var(--note-ink);
+  border: 1px solid var(--note-line);
   border-radius: 6px;
   padding: 10px 12px;
   font-size: 13px;
   margin-bottom: 14px
-}
-
-@media(prefers-color-scheme:dark) {
-  .note {
-    background: #2f2a14;
-    color: #ecd68a;
-    border-color: #5a4d1c
-  }
 }
 
 .toast {
@@ -699,12 +774,12 @@ summary {
 
 .revision-aviso,
 .st.alerta {
-  color: var(--no);
+  color: var(--revision-aviso);
   background: var(--card);
 }
 
 .revision-ok {
-  color: var(--ok);
+  color: var(--revision-ok);
 }
 
 #alertas-revision {
@@ -724,17 +799,6 @@ summary {
 #revision-form > p,
 #edicion-form > p {
   max-width: 90ch;
-}
-
-@media (prefers-color-scheme: dark) {
-  .revision-aviso,
-  .st.alerta {
-    color: #ffb4ab;
-  }
-
-  .revision-ok {
-    color: #8bdaa1;
-  }
 }
 
 .registro-grid {

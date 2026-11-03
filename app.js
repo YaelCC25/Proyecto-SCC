@@ -23,6 +23,46 @@ const RUTAS = { panel: 'Panel principal', importar: 'Importar base', levantamien
 const PERMISOS = { Administrador: Object.keys(RUTAS), 'Responsable de inventario': Object.keys(RUTAS), Verificador: ['panel', 'levantamiento', 'custodios'] };
 let user = null, chart = null;
 
+/* ---------- Apariencia y visibilidad de la contraseña ---------- */
+const temaSistema = window.matchMedia('(prefers-color-scheme: dark)');
+let temaElegido = false;
+function aplicarTema(oscuro) {
+  document.documentElement.dataset.theme = oscuro ? 'dark' : 'light';
+  document.querySelectorAll('[data-theme-toggle]').forEach(boton => {
+    const siguiente = oscuro ? 'claro' : 'oscuro';
+    boton.setAttribute('aria-pressed', String(oscuro));
+    boton.setAttribute('aria-label', `Activar modo ${siguiente}`);
+    boton.title = `Activar modo ${siguiente}`;
+    $('[data-theme-label]', boton).textContent = `Modo ${siguiente}`;
+  });
+  if (chart && $('#ch')) {
+    const css = getComputedStyle(document.documentElement);
+    chart.data.datasets[0].backgroundColor = Object.values(COLOR).map(color => css.getPropertyValue(color).trim());
+    chart.options.plugins.legend.labels.color = css.getPropertyValue('--ink').trim();
+    chart.update('none');
+  }
+}
+document.querySelectorAll('[data-theme-toggle]').forEach(boton => {
+  boton.onclick = () => {
+    temaElegido = true;
+    aplicarTema(document.documentElement.dataset.theme !== 'dark');
+  };
+});
+temaSistema.addEventListener('change', e => {
+  if (!temaElegido) aplicarTema(e.matches);
+});
+aplicarTema(temaSistema.matches);
+
+function mostrarContrasena(visible) {
+  $('#l-pass').type = visible ? 'text' : 'password';
+  const boton = $('#toggle-password');
+  const etiqueta = visible ? 'Ocultar contraseña' : 'Mostrar contraseña';
+  boton.setAttribute('aria-pressed', String(visible));
+  boton.setAttribute('aria-label', etiqueta);
+  boton.title = etiqueta;
+}
+$('#toggle-password').onclick = () => mostrarContrasena($('#l-pass').type === 'password');
+
 const cust = id => CUSTODIOS.find(c => c.id == id)?.nombre ?? '—';
 const conteo = (lista = BIENES) => {
   const c = { encontrado: 0, no: 0, pendiente: 0 }; lista.forEach(b => c[b.estado]++); return c;
@@ -51,13 +91,14 @@ const barra = c => {
 /* ---------- Login y navegación ---------- */
 $('#l-ok').onclick = () => {
   if (!$('#l-correo').value) return toast('Escribe tu correo');
+  mostrarContrasena(false);
   user = { correo: $('#l-correo').value, rol: $('#l-rol').value };
   $('#login').hidden = true; $('#app').hidden = false;
   $('#u-info').textContent = user.correo + ' · ' + user.rol;
   $('#nav').innerHTML = PERMISOS[user.rol].map(r => `<a href="#${r}" data-r="${r}">${RUTAS[r]}</a>`).join('');
   route();
 };
-$('#salir').onclick = () => { user = null; $('#app').hidden = true; $('#login').hidden = false; };
+$('#salir').onclick = () => { mostrarContrasena(false); user = null; $('#app').hidden = true; $('#login').hidden = false; };
 addEventListener('hashchange', () => user && route());
 function route() {
   let r = location.hash.slice(1) || 'panel';
