@@ -89,8 +89,22 @@ const barra = c => {
 };
 
 /* ---------- Login y navegación ---------- */
+function validarCorreoLogin() {
+  const correo = $('#l-correo'), error = $('#correo-error');
+  const valido = correo.validity.valid;
+  correo.setAttribute('aria-invalid', String(!valido));
+  error.hidden = valido;
+  error.textContent = valido ? '' : correo.validity.valueMissing
+    ? 'Escribe tu correo.'
+    : 'Escribe un correo válido, por ejemplo: nombre@correo.com';
+  return valido;
+}
+$('#l-correo').addEventListener('input', () => {
+  if ($('#l-correo').getAttribute('aria-invalid') === 'true') validarCorreoLogin();
+});
 $('#l-ok').onclick = () => {
-  if (!$('#l-correo').value) return toast('Escribe tu correo');
+  $('#l-correo').value = $('#l-correo').value.trim();
+  if (!validarCorreoLogin()) { $('#l-correo').focus(); return; }
   mostrarContrasena(false);
   user = { correo: $('#l-correo').value, rol: $('#l-rol').value };
   $('#login').hidden = true; $('#app').hidden = false;

@@ -199,6 +199,17 @@ label>textarea {
   margin-bottom: 4px
 }
 
+.login-box input[aria-invalid="true"] {
+  border-color: var(--revision-aviso)
+}
+
+.field-error {
+  margin: -8px 0 12px;
+  color: var(--revision-aviso);
+  font-size: 13px;
+  overflow-wrap: anywhere
+}
+
 .password-field {
   position: relative;
   margin-bottom: 12px

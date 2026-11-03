@@ -25,7 +25,8 @@
       </div>
       <h1>Control de Inventario</h1>
       <p class="muted">Levantamiento físico de bienes institucionales</p>
-      <label>Correo<input id="l-correo" type="email" value="admin@demo.mx"></label>
+      <label>Correo<input id="l-correo" type="email" value="admin@demo.mx" required aria-describedby="correo-error"></label>
+      <p id="correo-error" class="field-error" role="alert" hidden></p>
       <label for="l-pass" class="password-label">Contraseña</label>
       <div class="password-field">
         <input id="l-pass" type="password" value="demo">
