@@ -12,7 +12,7 @@ python -m http.server 8000
 
 En Windows puedes usar `py`; en Linux/macOS, `python3`. Abre `http://localhost:8000/Index.html`. No requiere npm ni compilación.
 
-El correo y la contraseña ya no vienen prellenados. El acceso actual identifica la sesión y permite elegir un perfil de trabajo, pero **no autentica cuentas ni comprueba contraseñas**. Los perfiles no son controles de seguridad. Para usuarios reales con permisos y datos compartidos se necesita integrar un servicio de autenticación y una base de datos de servidor.
+El correo y la contraseña comienzan vacíos. Para entrar se exige un correo con formato válido y una contraseña no vacía. Al cerrar sesión ambos campos se limpian, sin borrar el inventario guardado. El acceso actual identifica la sesión y permite elegir un perfil de trabajo, pero **no autentica cuentas ni comprueba contraseñas**. Los perfiles no son controles de seguridad. Para usuarios reales con permisos y datos compartidos se necesita integrar un servicio de autenticación y una base de datos de servidor.
 
 ## Cargar la base
 

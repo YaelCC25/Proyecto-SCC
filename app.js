@@ -135,17 +135,52 @@ function validarCorreoLogin() {
 $('#l-correo').addEventListener('input', () => {
   if ($('#l-correo').getAttribute('aria-invalid') === 'true') validarCorreoLogin();
 });
-$('#l-ok').onclick = () => {
-  $('#l-correo').value = $('#l-correo').value.trim();
-  if (!validarCorreoLogin()) { $('#l-correo').focus(); return; }
+function validarContrasenaLogin() {
+  const campo = $('#l-pass'), error = $('#password-error');
+  const valido = campo.value.trim().length > 0;
+  campo.setAttribute('aria-invalid', String(!valido));
+  error.hidden = valido;
+  error.textContent = valido ? '' : 'Escribe tu contraseña.';
+  return valido;
+}
+$('#l-pass').addEventListener('input', () => {
+  if ($('#l-pass').getAttribute('aria-invalid') === 'true') validarContrasenaLogin();
+});
+function limpiarLogin() {
+  $('#login-form').reset();
+  $('#l-correo').value = '';
+  $('#l-pass').value = '';
+  ['#l-correo', '#l-pass'].forEach(selector => $(selector).removeAttribute('aria-invalid'));
+  ['#correo-error', '#password-error'].forEach(selector => {
+    $(selector).hidden = true;
+    $(selector).textContent = '';
+  });
   mostrarContrasena(false);
+}
+$('#login-form').onsubmit = e => {
+  e.preventDefault();
+  $('#l-correo').value = $('#l-correo').value.trim();
+  const correoValido = validarCorreoLogin(), contrasenaValida = validarContrasenaLogin();
+  if (!correoValido || !contrasenaValida) {
+    $(correoValido ? '#l-pass' : '#l-correo').focus();
+    return;
+  }
   user = { correo: $('#l-correo').value, rol: $('#l-rol').value };
+  limpiarLogin();
   $('#login').hidden = true; $('#app').hidden = false;
   $('#u-info').textContent = user.correo + ' · ' + user.rol;
   $('#nav').innerHTML = PERMISOS[user.rol].map(r => `<a href="#${r}" data-r="${r}">${RUTAS[r]}</a>`).join('');
   route();
 };
-$('#salir').onclick = () => { mostrarContrasena(false); user = null; $('#app').hidden = true; $('#login').hidden = false; };
+$('#salir').onclick = () => {
+  user = null;
+  limpiarLogin();
+  $('#app').hidden = true;
+  $('#login').hidden = false;
+  $('#u-info').textContent = '';
+  $('#toast').hidden = true;
+  $('#l-correo').focus();
+};
 addEventListener('hashchange', () => user && route());
 function route() {
   let r = location.hash.slice(1) || 'panel';

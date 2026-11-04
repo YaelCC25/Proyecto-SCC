@@ -15,7 +15,7 @@
 
 <body>
   <div id="login" class="login">
-    <div class="login-box">
+    <form id="login-form" class="login-box" novalidate>
       <div class="login-tools">
         <button type="button" class="btn theme-toggle" data-theme-toggle aria-label="Activar modo oscuro" title="Activar modo oscuro" aria-pressed="false">
           <svg class="theme-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 13A8.5 8.5 0 0 1 11 3.5 8.5 8.5 0 1 0 20.5 13Z"/></svg>
@@ -29,11 +29,12 @@
       <p id="correo-error" class="field-error" role="alert" hidden></p>
       <label for="l-pass" class="password-label">Contraseña</label>
       <div class="password-field">
-        <input id="l-pass" type="password" autocomplete="current-password">
+        <input id="l-pass" type="password" autocomplete="current-password" required aria-describedby="password-error">
         <button id="toggle-password" class="password-toggle" type="button" aria-label="Mostrar contraseña" title="Mostrar contraseña" aria-controls="l-pass" aria-pressed="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="m3 3 18 18"/></svg>
         </button>
       </div>
+      <p id="password-error" class="field-error" role="alert" hidden></p>
       <label>Perfil de trabajo
         <select id="l-rol">
           <option>Administrador</option>
@@ -41,9 +42,9 @@
           <option>Verificador</option>
         </select>
       </label>
-      <button class="btn primary" id="l-ok">Iniciar sesión</button>
+      <button type="submit" class="btn primary" id="l-ok">Iniciar sesión</button>
       <p class="muted small">La identificación de sesión aún no verifica cuentas ni contraseñas. Los datos del inventario se guardan en este navegador.</p>
-    </div>
+    </form>
   </div>
   <div id="app" class="app" hidden>
     <aside class="side">
