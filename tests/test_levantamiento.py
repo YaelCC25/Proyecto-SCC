@@ -12,6 +12,14 @@ import unittest
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+LUGARES_ENCONTRADO = [
+    'CCL', 'SITE', 'Dirección', 'Bodega Norte', 'Bodega Central', 'Bodega Sur',
+    'Bodega Planta alta', 'Aula 1', 'Auditorio 1', 'Auditorio 2', 'Auditorio 3',
+    'Auditorio 4', 'Laboratorio 1', 'Laboratorio 2', 'Laboratorio 3',
+    'Laboratorio 4', 'Laboratorio 5', 'L. Redes', 'L. CISCO', 'L. Arquitectura',
+    'CC Licenciatura', 'D Comp Lab', 'Aula 1 Posg.', 'Aula 2 Posg.', 'Aula 3 Posg.',
+    'CC Posgrado', 'Sala de Exdirectores', 'Cubículos A', 'Cubículos B',
+]
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -83,6 +91,46 @@ class TestLevantamiento(unittest.TestCase):
         self.assertEqual(self.page.evaluate('BIENES.length'), 48)
         self.assertEqual(self.asset()['custodio'], 1)
         self.assertEqual(self.asset()['ubic'], 'Laboratorio 2')
+
+    def test_lugares_encontrados_solo_catalogo_sin_alterar_hoja(self):
+        self.page.evaluate('''() => {
+            BIENES[0].ubic = 'Ubicación del XLS';
+            LUGARES.push('Ubicación del XLS');
+        }''')
+        self.go('panel')
+        self.go('levantamiento')
+        observada = self.page.locator('#revision-ubicacion')
+        self.assertEqual(observada.locator('option').all_text_contents(), ['Selecciona un lugar'] + LUGARES_ENCONTRADO)
+        self.select(ubic='Ubicación del XLS')
+        expect(observada).to_have_value('')
+        self.scan()
+        self.assertEqual(self.asset()['estado'], 'pendiente')
+        observada.select_option('Cubículos A')
+        self.scan()
+        expect(self.result).to_contain_text('Ubicación distinta')
+        self.assertEqual(self.asset()['ubic'], 'Ubicación del XLS')
+        self.assertEqual(self.asset()['verificacion']['ubic'], 'Cubículos A')
+        self.page.locator('#fu').select_option('Laboratorio 2')
+        expect(observada).to_have_value('Cubículos A')
+        self.go('reportes')
+        expect(self.page.locator('#reporte-discrepancias')).to_contain_text('Ubicación del XLS')
+        expect(self.page.locator('#reporte-discrepancias')).to_contain_text('Cubículos A')
+        self.page.reload()
+        self.assertEqual(self.asset()['ubic'], 'Ubicación del XLS')
+        self.assertEqual(self.asset()['verificacion']['ubic'], 'Cubículos A')
+
+    def test_correccion_sin_ubicacion_ofrece_los_29_lugares(self):
+        self.page.evaluate("BIENES[0].ubic = ''")
+        self.scan()
+        self.result.locator('[data-editar]').click()
+        ubicacion = self.page.locator('#edicion-ubic')
+        self.assertEqual(ubicacion.locator('option').all_text_contents(), ['Selecciona una ubicación'] + LUGARES_ENCONTRADO)
+        expect(ubicacion).to_have_value('')
+        ubicacion.select_option('Bodega Planta alta')
+        self.page.get_by_role('button', name='Guardar corrección', exact=True).click()
+        self.assertEqual(self.asset()['ubic'], 'Bodega Planta alta')
+        self.page.reload()
+        self.assertEqual(self.asset()['ubic'], 'Bodega Planta alta')
 
     def test_cerrar_sesion_limpia_campos_y_exige_datos_para_volver(self):
         self.select()
@@ -156,23 +204,25 @@ class TestLevantamiento(unittest.TestCase):
         self.assertEqual(self.page.evaluate('LUGARES'), ['Oficina real'])
         self.go('levantamiento')
         self.select(ubic='Oficina real', cust='1')
+        self.page.locator('#revision-ubicacion').select_option('CCL')
         self.scan('REAL-001')
-        expect(self.result).to_contain_text('coinciden')
+        expect(self.result).to_contain_text('Ubicación distinta')
         self.page.reload()
         self.assertEqual(self.page.evaluate('BIENES.map(b => b.inv)'), ['REAL-001', 'REAL-002'])
         self.assertEqual(self.asset()['estado'], 'encontrado')
-        self.assertEqual(self.asset()['verificacion']['ubic'], 'Oficina real')
+        self.assertEqual(self.asset()['verificacion']['ubic'], 'CCL')
+        self.assertEqual(self.asset()['ubic'], 'Oficina real')
         self.assertEqual(self.page.evaluate('CUSTODIOS[0].id'), 1)
 
     def test_correcciones_y_observaciones_se_conservan_al_recargar(self):
-        self.select(ubic='Oficina 5', cust='2')
+        self.select(ubic='SITE', cust='2')
         self.scan()
         self.result.locator('[data-editar]').click()
         self.page.get_by_role('button', name='Guardar corrección', exact=True).click()
         self.page.locator('#q').fill('INV-00100')
         self.page.locator('[data-o="0"]').fill('Etiqueta revisada')
         self.page.reload()
-        self.assertEqual(self.asset()['ubic'], 'Oficina 5')
+        self.assertEqual(self.asset()['ubic'], 'SITE')
         self.assertEqual(self.asset()['custodio'], 2)
         self.assertEqual(self.asset()['obs'], 'Etiqueta revisada')
         self.assertEqual(self.asset()['verificacion']['registrada']['ubic'], 'Laboratorio 2')
@@ -211,11 +261,11 @@ class TestLevantamiento(unittest.TestCase):
         self.scan(' inv-00101 ')
         expect(self.result).to_contain_text('Monitor')
         expect(self.result).to_contain_text('Luis Ramírez')
-        expect(self.result).to_contain_text('Oficina 5')
+        expect(self.result).to_contain_text('SITE')
         expect(self.result).to_contain_text('Sin revisar')
         self.assertEqual(self.asset(1)['estado'], 'pendiente')
         self.assertNotIn('verificacion', self.asset(1))
-        self.select(ubic='Oficina 5', cust='2')
+        self.select(ubic='SITE', cust='2')
         self.inv.press('Enter')
         self.assertEqual(self.asset(1)['estado'], 'encontrado')
 
@@ -251,16 +301,16 @@ class TestLevantamiento(unittest.TestCase):
         expect(self.page.locator('#lista [data-bien="INV-00100"]')).to_contain_text('Revisar asignación')
 
     def test_ubicacion_distinta_alerta_sin_mover(self):
-        self.select(ubic='Oficina 5')
+        self.select(ubic='SITE')
         self.scan()
         expect(self.result.locator('[role="alert"]')).to_contain_text('Ubicación distinta')
         expect(self.result.locator('[role="alert"]')).not_to_contain_text('Custodio distinto')
         expect(self.result).to_contain_text('Laboratorio 2')
-        expect(self.result).to_contain_text('Oficina 5')
+        expect(self.result).to_contain_text('SITE')
         self.assert_catalog()
 
     def test_ambas_diferencias_permanecen_al_pasar_al_siguiente(self):
-        self.select(ubic='Oficina 5', cust='2')
+        self.select(ubic='SITE', cust='2')
         self.scan()
         expect(self.result.locator('[role="alert"]')).to_contain_text('Ubicación distinta y Custodio distinto')
         self.scan('INV-00101')
@@ -270,7 +320,7 @@ class TestLevantamiento(unittest.TestCase):
         self.go('panel')
         expect(self.page.locator('.stat b')).to_have_text(['48', '2', '46', '4%', '1'])
         self.go('levantamiento')
-        self.select(ubic='Oficina 5', cust='2')
+        self.select(ubic='SITE', cust='2')
         expect(self.page.locator('#alertas-revision')).to_contain_text('INV-00100')
 
     def test_inventario_desconocido_y_vacio_no_crean_bienes(self):
@@ -288,17 +338,17 @@ class TestLevantamiento(unittest.TestCase):
         expect(self.result).to_contain_text('coinciden')
 
     def test_correccion_explicita_resuelve_alerta_y_conserva_evidencia(self):
-        self.select(ubic='Oficina 5', cust='2')
+        self.select(ubic='SITE', cust='2')
         self.scan()
         before = self.asset()
         self.result.locator('[data-editar]').click()
         expect(self.page.locator('#edicion-custodio')).to_have_value('2')
-        expect(self.page.locator('#edicion-ubic')).to_have_value('Oficina 5')
+        expect(self.page.locator('#edicion-ubic')).to_have_value('SITE')
         self.assert_catalog()
         self.page.get_by_role('button', name='Guardar corrección', exact=True).click()
         after = self.asset()
         self.assertEqual(after['custodio'], 2)
-        self.assertEqual(after['ubic'], 'Oficina 5')
+        self.assertEqual(after['ubic'], 'SITE')
         self.assertEqual(after['verificacion'], before['verificacion'])
         self.assertEqual(after['verificacion']['registrada'], {'custodio': 1, 'ubic': 'Laboratorio 2'})
         self.assertEqual(after['desc'], before['desc'])
@@ -314,11 +364,11 @@ class TestLevantamiento(unittest.TestCase):
         before = self.asset()
         self.page.locator('[data-bien="INV-00100"] [data-editar]').click()
         self.page.locator('#edicion-inv').fill(' inv-00101 ')
-        self.page.locator('#edicion-ubic').select_option('Oficina 5')
+        self.page.locator('#edicion-ubic').select_option('SITE')
         self.page.get_by_role('button', name='Guardar corrección', exact=True).click()
         expect(self.page.locator('#edicion-error')).to_contain_text('ya existe')
         expect(self.page.locator('#edicion-inv')).to_have_value(' inv-00101 ')
-        expect(self.page.locator('#edicion-ubic')).to_have_value('Oficina 5')
+        expect(self.page.locator('#edicion-ubic')).to_have_value('SITE')
         self.assertEqual(self.asset(), before)
         self.page.locator('#edicion-inv').fill('')
         self.page.get_by_role('button', name='Guardar corrección', exact=True).click()
@@ -349,7 +399,7 @@ class TestLevantamiento(unittest.TestCase):
         self.assertNotIn('verificacion', self.asset())
 
     def test_reporte_y_csv_incluyen_asignacion_registrada_y_observada(self):
-        self.select(ubic='Oficina 5', cust='2')
+        self.select(ubic='SITE', cust='2')
         self.scan()
         self.go('reportes')
         report = self.page.locator('#reporte-discrepancias')
@@ -358,7 +408,7 @@ class TestLevantamiento(unittest.TestCase):
         expect(report).to_contain_text('Ana Torres')
         expect(report).to_contain_text('Luis Ramírez')
         expect(report).to_contain_text('Laboratorio 2')
-        expect(report).to_contain_text('Oficina 5')
+        expect(report).to_contain_text('SITE')
         expect(report).to_contain_text('Encontrado')
         with self.page.expect_download() as download_info:
             self.page.locator('#csv').click()
@@ -369,7 +419,7 @@ class TestLevantamiento(unittest.TestCase):
                 rows = list(csv.reader(stream))
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[1][0], 'INV-00100')
-        self.assertEqual(rows[1][2:8], ['Ana Torres', 'Luis Ramírez', 'Laboratorio 2', 'Oficina 5', 'Encontrado', 'Ubicación distinta y Custodio distinto'])
+        self.assertEqual(rows[1][2:8], ['Ana Torres', 'Luis Ramírez', 'Laboratorio 2', 'SITE', 'Encontrado', 'Ubicación distinta y Custodio distinto'])
 
     def test_vista_movil_y_revision_desde_boton(self):
         self.page.set_viewport_size({'width': 390, 'height': 844})
@@ -377,7 +427,7 @@ class TestLevantamiento(unittest.TestCase):
         self.page.locator('[data-bien="INV-00100"] [data-e="encontrado"]').click()
         expect(self.result).to_contain_text('coinciden')
         self.assertEqual(self.asset()['estado'], 'encontrado')
-        self.select(ubic='Oficina 5', cust='2')
+        self.select(ubic='SITE', cust='2')
         self.scan()
         expect(self.result.locator('[role="alert"]')).to_be_visible()
         for locator in [self.inv, self.page.locator('#fu'), self.page.locator('#fc')]:
