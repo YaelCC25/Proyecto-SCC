@@ -1,4 +1,4 @@
-Pruebas del levantamiento con un servidor local y Chromium real. No necesitan base de datos ni acceso al CDN: comprueban consulta, coincidencias, diferencias de custodio y ubicación, corrección explícita, exportación CSV y vista móvil. Cada prueba parte de los 48 bienes de ejemplo.
+Pruebas del levantamiento con un servidor local y Chromium real. No necesitan base de datos ni acceso al CDN: comprueban consulta, coincidencias, diferencias de custodio y ubicación, corrección explícita, exportación CSV y vista móvil. Las pruebas del recorrido inyectan 48 bienes sintéticos desde `inventario_fixture.js`, un archivo exclusivo de pruebas que la aplicación no carga. También se comprueban el arranque vacío, la primera importación, la persistencia tras recargar y los errores de almacenamiento; cada prueba usa un contexto de navegador aislado.
 
 Desde la raíz del proyecto:
 

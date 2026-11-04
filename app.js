@@ -1,27 +1,60 @@
-/* Control de Inventario - versión visual (datos ficticios en memoria).
-   Cuando conectes Supabase, reemplaza BIENES/CUSTODIOS por consultas a la base. */
+/* Control de Inventario: bienes, custodios y ubicaciones cargados desde la hoja del usuario. */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const CUSTODIOS = [
-  { id: 1, nombre: 'Ana Torres', empleado: 'E-1001', area: 'Sistemas' },
-  { id: 2, nombre: 'Luis Ramírez', empleado: 'E-1002', area: 'Laboratorios' },
-  { id: 3, nombre: 'Marta Solís', empleado: 'E-1003', area: 'Administración' },
-  { id: 4, nombre: 'Jorge Peña', empleado: 'E-1004', area: 'Biblioteca' }];
-const DESC = ['Equipo de cómputo', 'Monitor', 'Escritorio', 'Silla ergonómica', 'Proyector', 'Impresora', 'Archivero', 'Mesa de trabajo'];
-const UBIC = ['Laboratorio 2', 'Oficina 5', 'Biblioteca', 'Aula 3', 'Almacén'];
-/* Lugares de la facultad. Edita esta lista con los reales (o se completa al importar la base). */
-const LUGARES = ['Laboratorio 1', 'Laboratorio 2', 'Laboratorio 3', 'Oficina 5', 'Oficina 9', 'Biblioteca', 'Aula 1', 'Aula 2', 'Aula 3', 'Almacén', 'Sala de maestros', 'Dirección', 'Cubículo 1', 'Cubículo 2'];
-let BIENES = Array.from({ length: 48 }, (_, i) => ({
-  inv: 'INV-' + String(100 + i).padStart(5, '0'), desc: DESC[i % DESC.length], custodio: CUSTODIOS[i % 4].id,
-  ubic: UBIC[i % UBIC.length], estado: 'pendiente', obs: ''
-}));
+const CUSTODIOS = [];
+const LUGARES = [];
+let BIENES = [];
 // La hoja conserva la asignación registrada; cada revisión puede guardar lo observado por separado.
 const ESTADOS = { encontrado: 'Encontrado', no: 'No encontrado', pendiente: 'Pendiente de verificar' };
 const COLOR = { encontrado: '--ok', no: '--no', pendiente: '--pen' };
 const RUTAS = { panel: 'Panel principal', importar: 'Importar base', levantamiento: 'Levantamiento', custodios: 'Custodios', reportes: 'Reportes' };
 const PERMISOS = { Administrador: Object.keys(RUTAS), 'Responsable de inventario': Object.keys(RUTAS), Verificador: ['panel', 'levantamiento', 'custodios'] };
 let user = null, chart = null;
+
+/* Guardado local del inventario. Las credenciales de acceso nunca se guardan aquí. */
+const CLAVE_DATOS = 'scc-inventario-v1';
+let almacenamientoDisponible = true;
+const avisoAlmacenamiento = mensaje => {
+  $('#storage-status').textContent = mensaje;
+  $('#storage-status').hidden = false;
+};
+function estadoDatos() {
+  return { version: 1, bienes: BIENES, custodios: CUSTODIOS, lugares: LUGARES };
+}
+function restaurarDatos(estado) {
+  BIENES = estado.bienes;
+  CUSTODIOS.splice(0, CUSTODIOS.length, ...estado.custodios);
+  LUGARES.splice(0, LUGARES.length, ...estado.lugares);
+}
+function actualizarDatos(cambiar) {
+  if (!almacenamientoDisponible) return false;
+  const anterior = JSON.parse(JSON.stringify(estadoDatos()));
+  try {
+    cambiar();
+    localStorage.setItem(CLAVE_DATOS, JSON.stringify(estadoDatos()));
+    $('#storage-status').hidden = true;
+    return true;
+  } catch {
+    restaurarDatos(anterior);
+    avisoAlmacenamiento('No se pudieron guardar los cambios en este navegador. La operación no se aplicó. Revisa el espacio y los permisos de almacenamiento antes de intentarlo de nuevo.');
+    return false;
+  }
+}
+try {
+  const guardado = localStorage.getItem(CLAVE_DATOS);
+  if (guardado) {
+    const estado = JSON.parse(guardado);
+    if (estado.version !== 1 || !Array.isArray(estado.bienes) || !Array.isArray(estado.custodios) || !Array.isArray(estado.lugares)
+      || !estado.bienes.every(b => b && typeof b.inv === 'string' && b.inv.trim() && typeof b.desc === 'string' && typeof b.ubic === 'string' && typeof b.obs === 'string' && Object.hasOwn(ESTADOS, b.estado) && Number.isFinite(b.custodio))
+      || !estado.custodios.every(c => c && Number.isFinite(c.id) && typeof c.nombre === 'string' && typeof c.empleado === 'string' && typeof c.area === 'string')
+      || !estado.lugares.every(l => typeof l === 'string')) throw new Error('Inventario local no válido');
+    restaurarDatos(estado);
+  }
+} catch {
+  almacenamientoDisponible = false;
+  avisoAlmacenamiento('No se pudo abrir el inventario guardado. No se sobrescribirán los datos existentes. Comprueba que el almacenamiento del navegador esté disponible.');
+}
 
 /* ---------- Apariencia y visibilidad de la contraseña ---------- */
 const temaSistema = window.matchMedia('(prefers-color-scheme: dark)');
@@ -127,6 +160,7 @@ const VISTAS = {
   panel() {
     const c = conteo(), n = BIENES.length, av = n ? Math.round((n - c.pendiente) / n * 100) : 0;
     $('#vista').innerHTML = `
+     ${!n ? '<div class="card estado-vacio"><h3>Aún no hay una base cargada</h3><p class="muted">Carga tu archivo Excel o CSV desde Importar base para comenzar.</p></div>' : ''}
      <div class="stats">
        <div class="stat"><b>${n}</b><span>Bienes del ejercicio</span></div>
        <div class="stat"><b>${n - c.pendiente}</b><span>Verificados</span></div>
@@ -158,6 +192,10 @@ const VISTAS = {
   },
 
   levantamiento() {
+    if (!BIENES.length) {
+      $('#vista').innerHTML = '<div class="card estado-vacio"><h3>No hay bienes cargados</h3><p class="muted">Importa tu hoja de inventario para comenzar el levantamiento.</p>' + (PERMISOS[user.rol].includes('importar') ? '<a class="btn primary" href="#importar">Importar base</a>' : '<p>Solicita la carga de la base al responsable de inventario.</p>') + '</div>';
+      return;
+    }
     $('#vista').innerHTML = `
       <div class="card">
         <form id="revision-form" aria-labelledby="revision-titulo">
@@ -235,7 +273,7 @@ const VISTAS = {
       if (!activo) {
         $('#resumen-ubicacion').innerHTML = '';
         $('#cantidad-bienes').textContent = '';
-        $('#lista').innerHTML = '<div class="estado-vacio"><h3>Consulta un inventario o selecciona una ubicación</h3><p class="muted">La hoja ya contiene 48 bienes de ejemplo. Selecciona ubicación y custodio para ver qué bienes les corresponden y revisarlos uno por uno.</p></div>';
+        $('#lista').innerHTML = '<div class="estado-vacio"><h3>Consulta un inventario o selecciona una ubicación</h3><p class="muted">Selecciona ubicación y custodio para ver los bienes de la hoja importada y revisarlos uno por uno.</p></div>';
         return;
       }
       const seleccion = b => (!lugar.value || ubicacion(b) === lugar.value) && (!custodio.value || b.custodio == custodio.value);
@@ -267,8 +305,10 @@ const VISTAS = {
       const b = BIENES[i];
       const completo = lugar.value && lugar.value !== 'Sin ubicación' && custodio.value;
       if (completo) {
-        b.verificacion = { ubic: lugar.value, custodio: Number(custodio.value), registrada: { ubic: b.ubic, custodio: b.custodio } };
-        b.estado = 'encontrado';
+        if (!actualizarDatos(() => {
+          b.verificacion = { ubic: lugar.value, custodio: Number(custodio.value), registrada: { ubic: b.ubic, custodio: b.custodio } };
+          b.estado = 'encontrado';
+        })) return;
       }
       ultimo = { i, verificado: Boolean(completo) };
       pintar();
@@ -304,7 +344,7 @@ const VISTAS = {
       if (BIENES.some((b, i) => i !== editando && b.inv.trim().toLocaleLowerCase('es') === inv.toLocaleLowerCase('es'))) return error('Ese número de inventario ya existe.');
       if (!ubic || !CUSTODIOS.some(c => c.id === responsable)) return error('Selecciona ubicación y custodio.');
       const b = BIENES[editando];
-      Object.assign(b, { inv, ubic, custodio: responsable });
+      if (!actualizarDatos(() => Object.assign(b, { inv, ubic, custodio: responsable }))) return;
       cerrarEdicion(); actualizarOpciones(); pintar();
       toast(`${inv}: asignación corregida en la hoja`);
     };
@@ -340,13 +380,15 @@ const VISTAS = {
       if (!boton) return;
       const i = Number(boton.dataset.i);
       if (boton.dataset.e === 'encontrado') { revisar(i); return; }
-      BIENES[i].estado = boton.dataset.e;
-      delete BIENES[i].verificacion;
+      if (!actualizarDatos(() => {
+        BIENES[i].estado = boton.dataset.e;
+        delete BIENES[i].verificacion;
+      })) return;
       if (ultimo?.i === i) ultimo = null;
       pintar(); toast('Verificación registrada: ' + ESTADOS[boton.dataset.e]);
     });
     $('#lista').oninput = e => {
-      if (e.target.dataset.o !== undefined) BIENES[e.target.dataset.o].obs = e.target.value;
+      if (e.target.dataset.o !== undefined && !actualizarDatos(() => { BIENES[e.target.dataset.o].obs = e.target.value; })) e.target.value = BIENES[e.target.dataset.o].obs;
     };
     actualizarOpciones(); pintar(); inventario.focus();
   },
@@ -384,10 +426,10 @@ const VISTAS = {
        ${disc.map(b => `<tr><td>${esc(b.inv)}</td><td>${esc(b.desc)}</td><td>${esc(cust(b.custodio))}</td><td>${b.verificacion ? esc(cust(b.verificacion.custodio)) : '—'}</td><td>${esc(ubicacion(b))}</td><td>${esc(b.verificacion?.ubic || '—')}</td><td>${badge(b.estado)}</td><td>${esc(b.estado === 'no' ? 'No encontrado' : diferenciasAsignacion(b).join(' y '))}</td></tr>`).join('')}</tbody></table></div>`;
     const css = getComputedStyle(document.documentElement);
     if (chart) chart.destroy();
-    if (typeof Chart === 'undefined') {
+    if (!BIENES.length || typeof Chart === 'undefined') {
       const aviso = document.createElement('p');
       aviso.className = 'muted small';
-      aviso.textContent = 'La gráfica no está disponible. Los resultados y la exportación se muestran abajo.';
+      aviso.textContent = !BIENES.length ? 'Importa tu base de inventario para ver los resultados.' : 'La gráfica no está disponible. Los resultados y la exportación se muestran abajo.';
       $('#ch').parentElement.style.height = 'auto';
       $('#ch').replaceWith(aviso);
     } else chart = new Chart($('#ch'), {
@@ -431,18 +473,21 @@ function registrarCustodio(nombre) {
   return custodio;
 }
 /* ---------- Importación: lectura, mapeo y vista previa ---------- */
+const claveInventario = valor => String(valor ?? '').trim().toLocaleLowerCase('es');
 const CAMPOS = [['inv', 'Número de inventario'], ['desc', 'Descripción'], ['custodio', 'Custodio'], ['ubic', 'Ubicación']];
 function leer(file) {
   if (!file) return;
+  if (typeof XLSX === 'undefined') return toast('No se pudo cargar el lector de Excel/CSV. Comprueba tu conexión y vuelve a abrir la página.');
   const rd = new FileReader();
   rd.onload = e => {
     try {
       const wb = XLSX.read(e.target.result, { type: 'array' });
-      const filas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+      const filas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: false });
       if (!filas.length) return toast('El archivo no tiene registros');
       vistaPrevia(filas, file.name);
     } catch { toast('No se pudo leer el archivo'); }
   };
+  rd.onerror = () => toast('No se pudo abrir el archivo. Vuelve a seleccionarlo.');
   rd.readAsArrayBuffer(file);
 }
 function vistaPrevia(filas, nombre) {
@@ -457,28 +502,36 @@ function vistaPrevia(filas, nombre) {
        ${filas.slice(0, 5).map(r => `<tr>${cols.map(c => `<td>${esc(r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
   const resumen = () => {
     const m = {}; document.querySelectorAll('[data-k]').forEach(s => m[s.dataset.k] = s.value);
-    const ids = m.inv ? filas.map(r => String(r[m.inv]).trim()) : [];
-    const vistos = new Set(), dup = new Set(); ids.forEach(i => vistos.has(i) ? dup.add(i) : vistos.add(i));
-    const vacios = ids.filter(i => !i).length, existentes = ids.filter(i => BIENES.some(b => b.inv === i)).length;
+    const ids = m.inv ? filas.map(r => claveInventario(r[m.inv])) : [];
+    const registrados = new Set(BIENES.map(b => claveInventario(b.inv)));
+    const vistos = new Set();
+    let nuevos = 0, duplicados = 0, vacios = 0, existentes = 0;
+    ids.forEach(id => {
+      if (!id) { vacios++; return; }
+      if (vistos.has(id)) { duplicados++; return; }
+      vistos.add(id);
+      if (registrados.has(id)) existentes++;
+      else nuevos++;
+    });
     $('#res').innerHTML = `<h3>Resumen antes de confirmar</h3>
          <div class="stats"><div class="stat"><b>${filas.length}</b><span>Registros leídos</span></div>
-         <div class="stat"><b>${ids.length ? ids.length - existentes - vacios : 0}</b><span>Bienes nuevos</span></div>
+         <div class="stat"><b>${nuevos}</b><span>Bienes nuevos</span></div>
          <div class="stat"><b>${existentes}</b><span>Ya existen</span></div>
-         <div class="stat"><b>${dup.size}</b><span>Duplicados en el archivo</span></div>
+         <div class="stat"><b>${duplicados}</b><span>Duplicados en el archivo</span></div>
          <div class="stat"><b>${vacios}</b><span>Sin identificador</span></div></div>
-         <button class="btn primary" id="ok" ${m.inv ? '' : 'disabled'}>Confirmar importación</button>
+         <button class="btn primary" id="ok" ${m.inv && nuevos ? '' : 'disabled'}>Confirmar importación</button>
          <p class="muted small">Se agregan solo los bienes nuevos, como Pendientes. Nada se elimina ni se marca como verificado.</p>`;
     $('#ok').onclick = () => {
       if (!confirm(`¿Importar los bienes nuevos de ${nombre}?`)) return;
       let n = 0;
-      filas.forEach(r => {
-        const id = String(r[m.inv]).trim();
-        if (!id || BIENES.some(b => b.inv === id)) return;
-        const nombreC = m.custodio ? String(r[m.custodio]).trim() : '';
+      if (!actualizarDatos(() => filas.forEach(r => {
+        const id = String(r[m.inv] ?? '').trim();
+        if (!id || BIENES.some(b => claveInventario(b.inv) === claveInventario(id))) return;
+        const nombreC = m.custodio ? String(r[m.custodio] ?? '').trim() : '';
         const c = registrarCustodio(nombreC);
         const ub = registrarLugar(m.ubic ? r[m.ubic] : '');
-        BIENES.push({ inv: id, desc: m.desc ? r[m.desc] : '', custodio: c ? c.id : 0, ubic: ub, estado: 'pendiente', obs: '' }); n++;
-      });
+        BIENES.push({ inv: id, desc: m.desc ? String(r[m.desc] ?? '') : '', custodio: c ? c.id : 0, ubic: ub, estado: 'pendiente', obs: '' }); n++;
+      }))) return;
       toast(n + ' bienes importados como Pendientes'); location.hash = 'panel';
     };
   };

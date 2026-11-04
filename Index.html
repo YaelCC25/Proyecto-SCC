@@ -25,16 +25,16 @@
       </div>
       <h1>Control de Inventario</h1>
       <p class="muted">Levantamiento físico de bienes institucionales</p>
-      <label>Correo<input id="l-correo" type="email" value="admin@demo.mx" required aria-describedby="correo-error"></label>
+      <label>Correo<input id="l-correo" type="email" placeholder="nombre@institucion.mx" required aria-describedby="correo-error"></label>
       <p id="correo-error" class="field-error" role="alert" hidden></p>
       <label for="l-pass" class="password-label">Contraseña</label>
       <div class="password-field">
-        <input id="l-pass" type="password" value="demo">
+        <input id="l-pass" type="password" autocomplete="current-password">
         <button id="toggle-password" class="password-toggle" type="button" aria-label="Mostrar contraseña" title="Mostrar contraseña" aria-controls="l-pass" aria-pressed="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="m3 3 18 18"/></svg>
         </button>
       </div>
-      <label>Rol (solo en la demo)
+      <label>Perfil de trabajo
         <select id="l-rol">
           <option>Administrador</option>
           <option>Responsable de inventario</option>
@@ -42,7 +42,7 @@
         </select>
       </label>
       <button class="btn primary" id="l-ok">Iniciar sesión</button>
-      <p class="muted small">Versión visual con datos ficticios. Aún no hay conexión a base de datos.</p>
+      <p class="muted small">La identificación de sesión aún no verifica cuentas ni contraseñas. Los datos del inventario se guardan en este navegador.</p>
     </div>
   </div>
   <div id="app" class="app" hidden>
@@ -64,6 +64,7 @@
         </div>
       </header>
       <p id="ayuda-levantamiento" class="muted ayuda-vista" hidden>Revisa los bienes de la hoja por ubicación y custodio. Al comprobar un inventario, compara la asignación registrada con lo que encuentras físicamente.</p>
+      <p id="storage-status" class="note" role="status" hidden></p>
       <section id="vista" aria-labelledby="titulo"></section>
     </main>
   </div>

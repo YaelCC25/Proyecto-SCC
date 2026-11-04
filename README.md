@@ -1,8 +1,6 @@
 # Control de inventario
 
-Demo de revisión física de bienes institucionales. Incluye 48 bienes precargados con número de inventario, descripción, custodio responsable y ubicación según una hoja de inventario.
-
-Los datos y las revisiones viven en memoria: recargar la página reinicia la demo. No hay conexión a una base de datos.
+Aplicación de revisión física de bienes institucionales a partir de una hoja de inventario Excel o CSV. Arranca sin bienes, custodios ni ubicaciones precargados: los catálogos se crean con los datos importados.
 
 ## Ejecutar
 
@@ -12,29 +10,40 @@ Desde la carpeta del proyecto:
 python -m http.server 8000
 ```
 
-En Windows puedes usar `py`; en Linux/macOS, `python3`. Abre `http://localhost:8000/Index.html` y entra con los datos demo prellenados. No requiere npm ni compilación.
+En Windows puedes usar `py`; en Linux/macOS, `python3`. Abre `http://localhost:8000/Index.html`. No requiere npm ni compilación.
 
-## Simular la revisión
+El correo y la contraseña ya no vienen prellenados. El acceso actual identifica la sesión y permite elegir un perfil de trabajo, pero **no autentica cuentas ni comprueba contraseñas**. Los perfiles no son controles de seguridad. Para usuarios reales con permisos y datos compartidos se necesita integrar un servicio de autenticación y una base de datos de servidor.
 
-1. En **Levantamiento**, selecciona la ubicación y el custodio que estás revisando. Abajo aparece la lista de bienes que les corresponden según la hoja.
-2. Escribe el número de inventario del bien físico y presiona **Enter**.
-3. La pantalla muestra la asignación de la hoja y lo observado. Si coinciden, el bien queda **Encontrado**. Si difieren, también queda encontrado físicamente, con una alerta de ubicación, custodio o ambos.
-4. El número se limpia y las selecciones permanecen para revisar el siguiente. Las alertas permanecen en la lista de la revisión y en **Reportes**.
-5. **Corregir asignación** permite cambiar explícitamente la información de la hoja. Revisar un bien por sí solo conserva su asignación registrada.
+## Cargar la base
 
-Puedes consultar un número sin seleccionar ubicación y custodio: muestra su responsable y ubicación, sin marcarlo como encontrado. Un número inexistente muestra una alerta y no crea bienes automáticamente. Para cargar otra hoja está disponible **Importar base** (Excel/CSV).
+1. Identifica la sesión con tu correo y entra con el perfil Administrador o Responsable de inventario.
+2. En **Importar base**, selecciona o arrastra un archivo `.xlsx`, `.xls` o `.csv`. Se lee la primera hoja.
+3. Relaciona las columnas de número de inventario, descripción, custodio y ubicación. La columna de inventario es obligatoria; las demás pueden omitirse.
+4. Revisa la vista previa y los conteos. Los inventarios vacíos se omiten; los duplicados se detectan sin distinguir mayúsculas y minúsculas. Se eliminan espacios al inicio y al final del identificador.
+5. Confirma la importación. Los bienes nuevos se agregan como **Pendientes**; los existentes no se reemplazan ni se marcan como verificados.
 
-Ejemplos precargados:
+Custodios y ubicaciones se crean a partir del archivo. Un bien sin estos datos puede consultarse; para registrar una revisión y corregir su asignación se necesita un custodio y una ubicación válidos.
 
-| Inventario | Bien | Custodio en la hoja | Ubicación en la hoja |
-| --- | --- | --- | --- |
-| INV-00100 | Equipo de cómputo | Ana Torres | Laboratorio 2 |
-| INV-00101 | Monitor | Luis Ramírez | Oficina 5 |
+## Guardado y alcance
 
-Para demostrar una coincidencia, selecciona **Oficina 5 / Luis Ramírez** y escribe **INV-00101**. Para demostrar una alerta, selecciona **Laboratorio 2 / Ana Torres** y escribe ese mismo número: la hoja indica otro custodio y otra ubicación.
+La base importada, las revisiones, las correcciones de asignación y las observaciones se guardan automáticamente en el almacenamiento local del navegador. Se restauran al recargar; las credenciales de acceso no se guardan.
 
-**Reportes** muestra bienes no encontrados y diferencias de asignación. Su CSV incluye tanto el custodio y ubicación registrados como los observados. La gráfica y la lectura de Excel/CSV utilizan bibliotecas de cdnjs; si la gráfica no carga, las tablas y la exportación siguen disponibles.
+Este guardado corresponde al mismo navegador y dirección de la aplicación. Mantén la misma dirección y puerto, por ejemplo `http://localhost:8000`. No se comparte entre usuarios, equipos, perfiles de navegador ni direcciones diferentes. Borrar los datos del sitio elimina el inventario guardado; conserva el archivo original. En navegación privada el almacenamiento puede ser temporal. El CSV de discrepancias es un reporte, no una copia completa de la base con todas sus revisiones.
+
+Si no es posible guardar un cambio, la operación se cancela y se muestra un aviso. Si el inventario guardado no se puede abrir, no se sobrescribe automáticamente. Una base compartida y el acceso con cuentas reales quedan pendientes de configurar según el servicio elegido.
+
+## Revisar los bienes
+
+1. En **Levantamiento**, selecciona ubicación y custodio para consultar los bienes que les corresponden según la hoja.
+2. Escribe un número de inventario y presiona **Enter**.
+3. Si la asignación coincide, el bien queda **Encontrado**. Si difiere, se registra como encontrado con una alerta de ubicación, custodio o ambos.
+4. El número se limpia y las selecciones permanecen para revisar el siguiente. Las alertas aparecen en la revisión y en **Reportes**.
+5. **Corregir asignación** permite modificar explícitamente la hoja; revisar un bien conserva la asignación registrada y la evidencia de lo observado.
+
+Sin seleccionar ubicación y custodio puedes consultar un inventario sin marcarlo como encontrado. Un número inexistente muestra una alerta y no crea bienes.
+
+**Reportes** muestra bienes no encontrados y discrepancias. Su CSV incluye las asignaciones registradas y observadas. La gráfica y el lector de Excel/CSV requieren las bibliotecas externas de cdnjs; si el lector no carga, la página lo indica y no importa archivos. Las tablas y la exportación CSV funcionan sin la gráfica.
 
 ## Pruebas
 
-Consulta [tests/README.md](tests/README.md). Las pruebas usan Chromium real, levantan su propio servidor y verifican el recorrido sin depender de las bibliotecas externas.
+Consulta [tests/README.md](tests/README.md). Las pruebas usan Chromium real. Sus datos sintéticos están aislados en `tests/inventario_fixture.js` y no se cargan en la aplicación normal. Incluyen arranque vacío, primera importación, persistencia después de recargar, fallos de almacenamiento y el recorrido de revisión.

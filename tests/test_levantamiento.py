@@ -49,6 +49,8 @@ class TestLevantamiento(unittest.TestCase):
         self.errors = []
         self.page.on('pageerror', lambda error: self.errors.append(str(error)))
         self.page.goto(self.url)
+        self.page.evaluate('(source) => { eval(source); }', (ROOT / 'tests/inventario_fixture.js').read_text())
+        self.page.locator('#l-correo').fill('operador@institucion.mx')
         self.page.locator('#l-ok').click()
         self.go('levantamiento')
         self.inv = self.page.locator('#revision-inv')
@@ -61,7 +63,9 @@ class TestLevantamiento(unittest.TestCase):
             self.context.close()
 
     def go(self, view):
-        self.page.locator(f'#nav [data-r="{view}"]').click()
+        enlace = self.page.locator(f'#nav [data-r="{view}"]')
+        enlace.click()
+        expect(enlace).to_have_class("on")
 
     def select(self, ubic='Laboratorio 2', cust='1'):
         self.page.locator('#fu').select_option(ubic)
@@ -78,6 +82,81 @@ class TestLevantamiento(unittest.TestCase):
         self.assertEqual(self.page.evaluate('BIENES.length'), 48)
         self.assertEqual(self.asset()['custodio'], 1)
         self.assertEqual(self.asset()['ubic'], 'Laboratorio 2')
+
+    def test_arranque_sin_base_ni_catalogos_precargados(self):
+        self.page.reload()
+        self.assertEqual(self.page.evaluate('[BIENES.length, CUSTODIOS.length, LUGARES.length]'), [0, 0, 0])
+        self.page.locator('#l-correo').fill('operador@institucion.mx')
+        self.page.locator('#l-ok').click()
+        self.go('panel')
+        expect(self.page.locator('.stat b')).to_have_text(['0', '0', '0', '0%', '0'])
+        expect(self.page.locator('#vista')).to_contain_text('Aún no hay una base cargada')
+        self.go('levantamiento')
+        expect(self.page.get_by_role('link', name='Importar base', exact=True).last).to_be_visible()
+        expect(self.page.locator('#vista')).to_contain_text('No hay bienes cargados')
+        self.go('custodios')
+        expect(self.page.locator('#tb tr')).to_have_count(0)
+        self.go('reportes')
+        expect(self.page.locator('#reporte-discrepancias h3')).to_have_text('Bienes con discrepancias (0)')
+
+    def test_importacion_primera_base_sin_datos_de_ejemplo(self):
+        self.page.reload()
+        self.page.locator('#l-correo').fill('operador@institucion.mx')
+        self.page.locator('#l-ok').click()
+        self.go('importar')
+        filas = [
+            {'Inventario': 'REAL-001', 'Descripción': 'Equipo institucional', 'Custodio': 'Responsable real', 'Ubicación': 'Oficina real'},
+            {'Inventario': ' real-001 ', 'Descripción': 'Duplicado'},
+            {'Inventario': 'REAL-002', 'Descripción': 'Monitor institucional', 'Custodio': 'Responsable real', 'Ubicación': 'Oficina real'},
+            {'Inventario': None, 'Descripción': 'Sin identificador'},
+        ]
+        self.page.evaluate('(filas) => vistaPrevia(filas, "inventario.csv")', filas)
+        expect(self.page.locator('#res .stat b')).to_have_text(['4', '2', '0', '1', '1'])
+        self.page.once('dialog', lambda dialog: dialog.accept())
+        self.page.locator('#ok').click()
+        expect(self.page.locator('#titulo')).to_have_text('Panel principal')
+        self.assertEqual(self.page.evaluate('BIENES.map(b => b.inv)'), ['REAL-001', 'REAL-002'])
+        self.assertEqual(self.page.evaluate('CUSTODIOS'), [{'id': 1, 'nombre': 'Responsable real', 'empleado': '—', 'area': '—'}])
+        self.assertEqual(self.page.evaluate('LUGARES'), ['Oficina real'])
+        self.go('levantamiento')
+        self.select(ubic='Oficina real', cust='1')
+        self.scan('REAL-001')
+        expect(self.result).to_contain_text('coinciden')
+        self.page.reload()
+        self.assertEqual(self.page.evaluate('BIENES.map(b => b.inv)'), ['REAL-001', 'REAL-002'])
+        self.assertEqual(self.asset()['estado'], 'encontrado')
+        self.assertEqual(self.asset()['verificacion']['ubic'], 'Oficina real')
+        self.assertEqual(self.page.evaluate('CUSTODIOS[0].id'), 1)
+
+    def test_correcciones_y_observaciones_se_conservan_al_recargar(self):
+        self.select(ubic='Oficina 5', cust='2')
+        self.scan()
+        self.result.locator('[data-editar]').click()
+        self.page.get_by_role('button', name='Guardar corrección', exact=True).click()
+        self.page.locator('#q').fill('INV-00100')
+        self.page.locator('[data-o="0"]').fill('Etiqueta revisada')
+        self.page.reload()
+        self.assertEqual(self.asset()['ubic'], 'Oficina 5')
+        self.assertEqual(self.asset()['custodio'], 2)
+        self.assertEqual(self.asset()['obs'], 'Etiqueta revisada')
+        self.assertEqual(self.asset()['verificacion']['registrada']['ubic'], 'Laboratorio 2')
+        self.assertEqual(self.page.locator('#l-pass').input_value(), '')
+
+    def test_fallo_de_guardado_no_aplica_revision(self):
+        self.select()
+        self.page.evaluate('() => { Storage.prototype.setItem = () => { throw new DOMException("Sin espacio", "QuotaExceededError"); }; }')
+        self.scan()
+        self.assertEqual(self.asset()['estado'], 'pendiente')
+        self.assertNotIn('verificacion', self.asset())
+        expect(self.page.locator('#storage-status')).to_contain_text('La operación no se aplicó')
+
+    def test_inventario_guardado_invalido_no_se_sobrescribe(self):
+        self.page.evaluate('localStorage.setItem(CLAVE_DATOS, "inventario dañado")')
+        self.page.reload()
+        self.assertEqual(self.page.evaluate('localStorage.getItem(CLAVE_DATOS)'), 'inventario dañado')
+        self.page.locator('#l-correo').fill('operador@institucion.mx')
+        self.page.locator('#l-ok').click()
+        expect(self.page.locator('#storage-status')).to_contain_text('No se sobrescribirán los datos existentes')
 
     def test_hoja_por_ubicacion_custodio_y_busqueda(self):
         self.page.locator('#fu').select_option('Laboratorio 2')
