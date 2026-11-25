@@ -34,13 +34,12 @@ Si no es posible guardar un cambio, la operación se cancela y se muestra un avi
 
 ## Revisar los bienes
 
-1. En **Levantamiento**, **Filtrar ubicación en la hoja** permite consultar la asignación importada. En **Lugar donde se encontró el bien** selecciona una de las 29 ubicaciones autorizadas y elige el custodio. Si el filtro coincide exactamente con un lugar autorizado, se propone ese lugar hasta que elijas otro explícitamente.
-2. Escribe un número de inventario y presiona **Enter**.
-3. Si la asignación coincide, el bien queda **Encontrado**. Si difiere, se registra como encontrado con una alerta de ubicación, custodio o ambos.
-4. El número se limpia y las selecciones permanecen para revisar el siguiente. Las alertas aparecen en la revisión y en **Reportes**.
-5. **Corregir asignación** permite modificar explícitamente la hoja; revisar un bien conserva la asignación registrada y la evidencia de lo observado.
+1. En **Levantamiento**, escribe el número de inventario y presiona **Enter** o **Buscar bien**. La ficha muestra la ubicación y el custodio registrados en la hoja.
+2. Si ambos datos coinciden con lo que observas, presiona **Enter** de nuevo o elige **Confirmar hallazgo**. El bien queda **Encontrado** y el campo se limpia para que puedas buscar el siguiente.
+3. Si la asignación difiere, elige el lugar de hallazgo y el custodio observados, pulsa **Usar selección de lugar y custodio** y confirma. Las diferencias aparecen en la ficha y en **Reportes**.
+4. **Corregir asignación** permite modificar explícitamente la hoja. Confirmar un hallazgo conserva la asignación registrada y la evidencia de lo observado.
 
-Sin seleccionar un lugar de hallazgo y un custodio puedes consultar un inventario sin marcarlo como encontrado. Elegir el lugar de hallazgo conserva la ubicación original; solo **Guardar corrección** modifica la asignación registrada. El selector de corrección también usa los 29 lugares autorizados; si la ubicación anterior no pertenece al catálogo, exige elegir una antes de guardar. Un número inexistente muestra una alerta y no crea bienes.
+El filtro de ubicación permite consultar la hoja importada. Si el filtro coincide exactamente con un lugar autorizado, se propone ese lugar en el selector de hallazgo hasta que elijas otro explícitamente. El selector de hallazgo y el de corrección usan los 29 lugares autorizados. Al confirmar una coincidencia puedes usar directamente la ubicación de la hoja, incluso si está fuera del catálogo. Si falta un dato de asignación, puedes consultar la ficha y completar la revisión con los datos observados. Un número inexistente muestra una alerta y no crea bienes.
 
 **Reportes** muestra bienes no encontrados y discrepancias. Su CSV incluye las asignaciones registradas y observadas. La gráfica y el lector de Excel/CSV requieren las bibliotecas externas de cdnjs; si el lector no carga, la página lo indica y no importa archivos. Las tablas y la exportación CSV funcionan sin la gráfica.
 

@@ -80,6 +80,11 @@ class TestLevantamiento(unittest.TestCase):
         self.page.locator('#fu').select_option(ubic)
         self.page.locator('#fc').select_option(cust)
 
+    def confirmar_seleccion(self, inv='INV-00100'):
+        self.scan(inv)
+        self.result.get_by_role('button', name='Usar selección de lugar y custodio').click()
+        self.inv.press('Enter')
+
     def scan(self, inv='INV-00100'):
         self.inv.fill(inv)
         self.inv.press('Enter')
@@ -106,7 +111,8 @@ class TestLevantamiento(unittest.TestCase):
         self.scan()
         self.assertEqual(self.asset()['estado'], 'pendiente')
         observada.select_option('Cubículos A')
-        self.scan()
+        self.result.get_by_role('button', name='Usar selección de lugar y custodio').click()
+        self.inv.press('Enter')
         expect(self.result).to_contain_text('Ubicación distinta')
         self.assertEqual(self.asset()['ubic'], 'Ubicación del XLS')
         self.assertEqual(self.asset()['verificacion']['ubic'], 'Cubículos A')
@@ -134,7 +140,7 @@ class TestLevantamiento(unittest.TestCase):
 
     def test_cerrar_sesion_limpia_campos_y_exige_datos_para_volver(self):
         self.select()
-        self.scan()
+        self.confirmar_seleccion()
         self.page.locator('#salir').click()
         expect(self.page.locator('#login')).to_be_visible()
         expect(self.page.locator('#l-correo')).to_have_value('')
@@ -205,7 +211,7 @@ class TestLevantamiento(unittest.TestCase):
         self.go('levantamiento')
         self.select(ubic='Oficina real', cust='1')
         self.page.locator('#revision-ubicacion').select_option('CCL')
-        self.scan('REAL-001')
+        self.confirmar_seleccion('REAL-001')
         expect(self.result).to_contain_text('Ubicación distinta')
         self.page.reload()
         self.assertEqual(self.page.evaluate('BIENES.map(b => b.inv)'), ['REAL-001', 'REAL-002'])
@@ -216,7 +222,7 @@ class TestLevantamiento(unittest.TestCase):
 
     def test_correcciones_y_observaciones_se_conservan_al_recargar(self):
         self.select(ubic='SITE', cust='2')
-        self.scan()
+        self.confirmar_seleccion()
         self.result.locator('[data-editar]').click()
         self.page.get_by_role('button', name='Guardar corrección', exact=True).click()
         self.page.locator('#q').fill('INV-00100')
@@ -231,7 +237,7 @@ class TestLevantamiento(unittest.TestCase):
     def test_fallo_de_guardado_no_aplica_revision(self):
         self.select()
         self.page.evaluate('() => { Storage.prototype.setItem = () => { throw new DOMException("Sin espacio", "QuotaExceededError"); }; }')
-        self.scan()
+        self.confirmar_seleccion()
         self.assertEqual(self.asset()['estado'], 'pendiente')
         self.assertNotIn('verificacion', self.asset())
         expect(self.page.locator('#storage-status')).to_contain_text('La operación no se aplicó')
@@ -265,14 +271,31 @@ class TestLevantamiento(unittest.TestCase):
         expect(self.result).to_contain_text('Sin revisar')
         self.assertEqual(self.asset(1)['estado'], 'pendiente')
         self.assertNotIn('verificacion', self.asset(1))
-        self.select(ubic='SITE', cust='2')
         self.inv.press('Enter')
         self.assertEqual(self.asset(1)['estado'], 'encontrado')
+        self.assertEqual(self.asset(1)['verificacion']['ubic'], 'SITE')
+        self.assertEqual(self.asset(1)['verificacion']['custodio'], 2)
+        self.page.reload()
+        self.assertEqual(self.asset(1)['estado'], 'encontrado')
+
+    def test_cambiar_numero_exige_consultar_el_nuevo_bien_antes_de_confirmar(self):
+        self.select()
+        self.scan()
+        self.scan('INV-00101')
+        expect(self.result).to_contain_text('Luis Ramírez')
+        self.assertEqual(self.asset()['estado'], 'pendiente')
+        self.assertEqual(self.asset(1)['estado'], 'pendiente')
+        self.inv.press('Enter')
+        self.assertEqual(self.asset()['estado'], 'pendiente')
+        self.assertEqual(self.asset(1)['estado'], 'encontrado')
+        self.assertEqual(self.asset(1)['verificacion']['ubic'], 'SITE')
+        self.assertEqual(self.asset(1)['verificacion']['custodio'], 2)
 
     def test_coincidencia_enter_prepara_siguiente_sin_duplicar(self):
         self.select()
         for inv in ['INV-00100', 'INV-00120', ' inv-00100 ']:
             self.scan(inv)
+            self.inv.press('Enter')
             expect(self.result).to_contain_text('ubicación y custodio coinciden')
             expect(self.inv).to_have_value('')
             expect(self.inv).to_be_focused()
@@ -286,7 +309,7 @@ class TestLevantamiento(unittest.TestCase):
 
     def test_custodio_distinto_alerta_sin_reasignar(self):
         self.select(cust='2')
-        self.scan()
+        self.confirmar_seleccion()
         expect(self.result.locator('[role="alert"]')).to_contain_text('Custodio distinto')
         expect(self.result.locator('[role="alert"]')).not_to_contain_text('Ubicación distinta')
         expect(self.result).to_contain_text('Ana Torres')
@@ -302,7 +325,7 @@ class TestLevantamiento(unittest.TestCase):
 
     def test_ubicacion_distinta_alerta_sin_mover(self):
         self.select(ubic='SITE')
-        self.scan()
+        self.confirmar_seleccion()
         expect(self.result.locator('[role="alert"]')).to_contain_text('Ubicación distinta')
         expect(self.result.locator('[role="alert"]')).not_to_contain_text('Custodio distinto')
         expect(self.result).to_contain_text('Laboratorio 2')
@@ -311,9 +334,10 @@ class TestLevantamiento(unittest.TestCase):
 
     def test_ambas_diferencias_permanecen_al_pasar_al_siguiente(self):
         self.select(ubic='SITE', cust='2')
-        self.scan()
+        self.confirmar_seleccion()
         expect(self.result.locator('[role="alert"]')).to_contain_text('Ubicación distinta y Custodio distinto')
         self.scan('INV-00101')
+        self.inv.press('Enter')
         expect(self.result).to_contain_text('coinciden')
         expect(self.page.locator('#alertas-revision')).to_contain_text('INV-00100')
         self.assert_catalog()
@@ -334,12 +358,12 @@ class TestLevantamiento(unittest.TestCase):
         self.scan('')
         self.assertTrue(self.inv.evaluate('(input) => input.validity.valueMissing'))
         self.assertEqual(self.asset()['estado'], 'pendiente')
-        self.scan()
+        self.confirmar_seleccion()
         expect(self.result).to_contain_text('coinciden')
 
     def test_correccion_explicita_resuelve_alerta_y_conserva_evidencia(self):
         self.select(ubic='SITE', cust='2')
-        self.scan()
+        self.confirmar_seleccion()
         before = self.asset()
         self.result.locator('[data-editar]').click()
         expect(self.page.locator('#edicion-custodio')).to_have_value('2')
@@ -400,7 +424,7 @@ class TestLevantamiento(unittest.TestCase):
 
     def test_reporte_y_csv_incluyen_asignacion_registrada_y_observada(self):
         self.select(ubic='SITE', cust='2')
-        self.scan()
+        self.confirmar_seleccion()
         self.go('reportes')
         report = self.page.locator('#reporte-discrepancias')
         expect(report.locator('h3')).to_have_text('Bienes con discrepancias (1)')
@@ -428,7 +452,7 @@ class TestLevantamiento(unittest.TestCase):
         expect(self.result).to_contain_text('coinciden')
         self.assertEqual(self.asset()['estado'], 'encontrado')
         self.select(ubic='SITE', cust='2')
-        self.scan()
+        self.confirmar_seleccion()
         expect(self.result.locator('[role="alert"]')).to_be_visible()
         for locator in [self.inv, self.page.locator('#fu'), self.page.locator('#fc')]:
             box = locator.bounding_box()

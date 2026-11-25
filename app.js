@@ -266,13 +266,14 @@ const VISTAS = {
       <div class="card">
         <form id="revision-form" aria-labelledby="revision-titulo">
           <h3 id="revision-titulo">Revisar la hoja de inventario</h3>
-          <p class="muted small" id="revision-ayuda">Selecciona el lugar donde encontraste el bien y el custodio. Puedes filtrar por la ubicación que figura en la hoja. Escribe un inventario y presiona Enter: si coincide, queda Encontrado; si difiere, se registra una alerta. También puedes consultar un número sin seleccionar contexto.</p>
+          <p class="muted small" id="revision-ayuda">Escribe el número de inventario y presiona Enter para ver la ubicación y el custodio de la hoja. Si ambos coinciden con lo que observas, presiona Enter de nuevo para marcar el bien como Encontrado. Si hay diferencias, selecciona los datos observados y pulsa Usar selección antes de confirmar.</p>
           <div class="registro-grid revision-grid">
             <label>Filtrar ubicación en la hoja<select id="fu"><option value="">Todas las ubicaciones</option></select></label>
             <label>Lugar donde se encontró el bien<select id="revision-ubicacion"><option value="">Selecciona un lugar</option>${LUGARES_ENCONTRADO.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('')}</select></label>
             <label>Custodio que estás revisando<select id="fc"><option value="">Todos los custodios</option></select></label>
             <label>Número de inventario<input id="revision-inv" required placeholder="Ej. INV-00100" autocomplete="off" aria-describedby="revision-ayuda"></label>
           </div>
+          <button class="btn primary" id="revision-enviar" type="submit">Buscar bien</button>
           <p id="revision-error" class="note" role="alert" hidden></p>
         </form>
       </div>
@@ -314,12 +315,14 @@ const VISTAS = {
     const pintarResultado = () => {
       const resultado = $('#resultado-revision');
       resultado.hidden = ultimo === null;
+      $('#revision-enviar').textContent = ultimo?.propuesta ? 'Confirmar hallazgo' : 'Buscar bien';
       if (ultimo === null) return;
       const b = BIENES[ultimo.i], diferencias = diferenciasAsignacion(b);
       const observada = ultimo.verificado ? b.verificacion : null;
       resultado.innerHTML = `<h3>${esc(b.inv)}${b.desc ? ` · ${esc(b.desc)}` : ''}</h3>
-        ${!observada ? '<p class="note">Consulta de la hoja. Selecciona el lugar donde se encontró el bien y el custodio, y presiona Enter para registrar la revisión.</p>' : diferencias.length ? `<p class="revision-aviso" role="alert"><strong>Alerta: ${esc(diferencias.join(' y '))}.</strong> El bien fue encontrado, pero su asignación no coincide con la hoja.</p>` : '<p class="revision-ok"><strong>Encontrado: ubicación y custodio coinciden con la hoja.</strong></p>'}
-        ${compararAsignacion(b, observada)}
+        ${!observada ? '<p class="note">Comprueba la ubicación y el custodio de la hoja. Presiona Enter para confirmar el hallazgo.</p>' : diferencias.length ? `<p class="revision-aviso" role="alert"><strong>Alerta: ${esc(diferencias.join(' y '))}.</strong> El bien fue encontrado, pero su asignación no coincide con la hoja.</p>` : '<p class="revision-ok"><strong>Encontrado: ubicación y custodio coinciden con la hoja.</strong></p>'}
+        ${compararAsignacion(b, ultimo.ajustada ? ultimo.propuesta : observada)}
+        ${ultimo.propuesta ? '<button type="button" class="btn" id="revision-usar-contexto">Usar selección de lugar y custodio</button>' : ''}
         <button type="button" class="btn" data-editar="${ultimo.i}">Corregir asignación</button>`;
     };
     const pintarAlertas = () => {
@@ -368,12 +371,14 @@ const VISTAS = {
         <label class="observaciones-bien">Observaciones<input data-o="${i}" value="${esc(b.obs)}" placeholder="Notas de la revisión"></label>
       </article>`).join('') || '<div class="estado-vacio"><p class="muted">No hay bienes asignados que coincidan con esta selección. Puedes buscar cualquier número en el campo de revisión.</p></div>';
     };
-    const revisar = i => {
+    const contextoObservado = () => ({ ubic: lugarEncontrado.value, custodio: Number(custodio.value) });
+    const asignacionCompleta = ({ ubic, custodio }) => Boolean(ubic && CUSTODIOS.some(c => c.id === custodio));
+    const revisar = (i, propuesta = contextoObservado()) => {
       const b = BIENES[i];
-      const completo = LUGARES_ENCONTRADO.includes(lugarEncontrado.value) && custodio.value;
+      const completo = asignacionCompleta(propuesta);
       if (completo) {
         if (!actualizarDatos(() => {
-          b.verificacion = { ubic: lugarEncontrado.value, custodio: Number(custodio.value), registrada: { ubic: b.ubic, custodio: b.custodio } };
+          b.verificacion = { ...propuesta, registrada: { ubic: b.ubic, custodio: b.custodio } };
           b.estado = 'encontrado';
         })) return;
       }
@@ -413,10 +418,17 @@ const VISTAS = {
       if (!LUGARES_ENCONTRADO.includes(ubic) || !CUSTODIOS.some(c => c.id === responsable)) return error('Selecciona ubicación y custodio.');
       const b = BIENES[editando];
       if (!actualizarDatos(() => Object.assign(b, { inv, ubic, custodio: responsable }))) return;
+      if (ultimo?.propuesta && ultimo.i === editando) ultimo = null;
       cerrarEdicion(); actualizarOpciones(); pintar();
       toast(`${inv}: asignación corregida en la hoja`);
     };
-    $('#revision-form').oninput = () => $('#revision-error').hidden = true;
+    $('#revision-form').oninput = e => {
+      $('#revision-error').hidden = true;
+      if (e.target === inventario && ultimo?.propuesta) {
+        ultimo = null;
+        pintarResultado();
+      }
+    };
     $('#revision-form').onkeydown = e => {
       if (e.key !== 'Enter' || e.isComposing || e.target !== inventario) return;
       e.preventDefault();
@@ -431,10 +443,24 @@ const VISTAS = {
         $('#revision-error').textContent = inv ? 'Este inventario no existe en la hoja. Revisa el número o importa la base; no se creó ningún bien.' : 'Escribe el número de inventario.';
         $('#revision-error').hidden = false; inventario.focus(); return;
       }
-      $('#revision-error').hidden = true; revisar(i);
+      $('#revision-error').hidden = true;
+      if (ultimo?.i !== i || !ultimo.propuesta) {
+        const b = BIENES[i];
+        ultimo = { i, propuesta: { ubic: b.ubic, custodio: b.custodio } };
+        pintarResultado();
+        inventario.focus();
+        return;
+      }
+      if (!asignacionCompleta(ultimo.propuesta)) {
+        $('#revision-error').textContent = 'Selecciona el lugar y el custodio observados y pulsa Usar selección de lugar y custodio.';
+        $('#revision-error').hidden = false;
+        return;
+      }
+      revisar(i, ultimo.propuesta);
     };
     const cambiarContexto = () => {
-      ultimo = null; $('#revision-error').hidden = true;
+      if (!ultimo?.propuesta) ultimo = null;
+      $('#revision-error').hidden = true;
       $('#q').value = ''; $('#fe').value = '';
       actualizarOpciones(); pintar();
       if (lugarEncontrado.value && custodio.value) inventario.focus();
@@ -446,13 +472,21 @@ const VISTAS = {
     custodio.onchange = cambiarContexto;
     lugarEncontrado.onchange = () => {
       lugarElegido = true;
-      ultimo = null;
+      if (!ultimo?.propuesta) ultimo = null;
       $('#revision-error').hidden = true;
       pintar();
       if (lugarEncontrado.value && custodio.value) inventario.focus();
     };
     ['#q', '#fe'].forEach(s => $(s).oninput = pintar);
     ['#resultado-revision', '#alertas-revision', '#lista'].forEach(s => $(s).onclick = e => {
+      if (e.target.closest('#revision-usar-contexto')) {
+        ultimo.propuesta = contextoObservado();
+        ultimo.ajustada = true;
+        $('#revision-error').hidden = true;
+        pintarResultado();
+        inventario.focus();
+        return;
+      }
       const editar = e.target.closest('[data-editar]');
       if (editar) { abrirEdicion(Number(editar.dataset.editar)); return; }
       const boton = e.target.closest('[data-e]');
