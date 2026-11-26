@@ -445,6 +445,95 @@ class TestLevantamiento(unittest.TestCase):
         self.assertEqual(rows[1][0], 'INV-00100')
         self.assertEqual(rows[1][2:8], ['Ana Torres', 'Luis Ramírez', 'Laboratorio 2', 'SITE', 'Encontrado', 'Ubicación distinta y Custodio distinto'])
 
+    def test_levantamientos_reanudables_con_historial_y_reporte_por_fecha(self):
+        self.page.clock.set_fixed_time('2026-11-19T21:00:00Z')
+        self.go('panel')
+        self.page.locator('#nombre-levantamiento').fill('Noviembre 2026')
+        self.page.get_by_role('button', name='Nuevo levantamiento').click()
+        expect(self.inv).to_be_visible()
+        self.scan()
+        self.inv.press('Enter')
+        primer_hallazgo = self.asset()['encontradoEn']
+
+        self.page.reload()
+        self.page.locator('#l-correo').fill('operador@institucion.mx')
+        self.page.locator('#l-pass').fill('Clave-de-prueba')
+        self.page.locator('#l-ok').click()
+        self.go('panel')
+        expect(self.page.get_by_role('heading', name='Noviembre 2026')).to_be_visible()
+        self.page.get_by_role('link', name='Continuar levantamiento').click()
+
+        self.page.clock.set_fixed_time('2026-11-25T21:00:00Z')
+        self.scan()
+        self.inv.press('Enter')
+        self.assertEqual(self.asset()['encontradoEn'], primer_hallazgo)
+        self.scan('INV-00101')
+        self.inv.press('Enter')
+
+        self.go('reportes')
+        encontrados = self.page.locator('#reporte-encontrados')
+        expect(encontrados.locator('tbody tr')).to_have_count(2)
+        dia = self.page.evaluate('fechaLocal(BIENES[1].encontradoEn)')
+        self.page.locator('#reporte-desde').fill(dia)
+        self.page.locator('#reporte-hasta').fill(dia)
+        expect(encontrados.locator('tbody tr')).to_have_count(1)
+        expect(encontrados.locator('tbody')).to_contain_text('INV-00101')
+        with self.page.expect_download() as descarga:
+            self.page.locator('#csv-encontrados').click()
+        with descarga.value.path().open(encoding='utf-8-sig', newline='') as archivo:
+            filas = list(csv.reader(archivo))
+        self.assertEqual(len(filas), 2)
+        self.assertEqual(filas[1][0], 'Noviembre 2026')
+        self.assertEqual(filas[1][2], 'INV-00101')
+        self.page.locator('#reporte-hasta').fill('2026-01-01')
+        expect(self.page.locator('#reporte-error')).to_be_visible()
+        expect(encontrados).to_be_hidden()
+
+        self.go('panel')
+        self.page.once('dialog', lambda dialog: dialog.accept())
+        self.page.get_by_role('button', name='Cerrar levantamiento').click()
+        self.go('levantamiento')
+        expect(self.page.get_by_role('heading', name='No hay un levantamiento activo')).to_be_visible()
+        self.go('panel')
+        self.page.clock.set_fixed_time('2027-11-19T21:00:00Z')
+        self.page.locator('#nombre-levantamiento').fill('Noviembre 2027')
+        self.page.get_by_role('button', name='Nuevo levantamiento').click()
+        expect(self.inv).to_be_visible()
+        self.assertEqual(self.asset()['estado'], 'pendiente')
+        self.assertEqual(self.asset()['ubic'], 'Laboratorio 2')
+        self.assertNotIn('encontradoEn', self.asset())
+
+        self.scan()
+        self.result.locator('[data-editar]').click()
+        self.page.locator('#edicion-custodio').select_option('2')
+        self.page.locator('#edicion-ubic').select_option('SITE')
+        self.page.get_by_role('button', name='Guardar corrección', exact=True).click()
+        self.assertEqual(self.asset()['custodio'], 2)
+
+        self.go('reportes')
+        expect(encontrados.locator('h3')).to_have_text('Bienes encontrados (0)')
+        self.page.locator('#reporte-levantamiento').select_option('1')
+        expect(encontrados.locator('tbody tr')).to_have_count(2)
+        expect(encontrados.locator('tbody tr').filter(has_text='INV-00100')).to_contain_text('Ana Torres')
+
+    def test_reporte_conserva_hallazgo_anterior_sin_fecha(self):
+        self.page.evaluate("""() => {
+            BIENES[0].estado = 'encontrado';
+            localStorage.setItem(CLAVE_DATOS, JSON.stringify({
+                version: 1, bienes: BIENES, custodios: CUSTODIOS, lugares: LUGARES
+            }));
+        }""")
+        self.page.reload()
+        self.page.locator('#l-correo').fill('operador@institucion.mx')
+        self.page.locator('#l-pass').fill('Clave-de-prueba')
+        self.page.locator('#l-ok').click()
+        self.go('reportes')
+        encontrados = self.page.locator('#reporte-encontrados')
+        expect(encontrados.locator('tbody')).to_contain_text('Sin fecha registrada')
+        self.page.locator('#reporte-desde').fill('2026-11-19')
+        expect(encontrados).to_contain_text('Los hallazgos anteriores sin fecha aparecen al quitar el filtro.')
+        expect(encontrados.locator('h3')).to_have_text('Bienes encontrados (0)')
+
     def test_vista_movil_y_revision_desde_boton(self):
         self.page.set_viewport_size({'width': 390, 'height': 844})
         self.select()

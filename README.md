@@ -43,6 +43,16 @@ El filtro de ubicación permite consultar la hoja importada. Si el filtro coinci
 
 **Reportes** muestra bienes no encontrados y discrepancias. Su CSV incluye las asignaciones registradas y observadas. La gráfica y el lector de Excel/CSV requieren las bibliotecas externas de cdnjs; si el lector no carga, la página lo indica y no importa archivos. Las tablas y la exportación CSV funcionan sin la gráfica.
 
+## Levantamientos e historial
+
+En **Panel principal**, asigna un nombre y pulsa **Nuevo levantamiento**. También puedes entrar directo a **Levantamiento** al comenzar con una base nueva. La primera revisión registrada iniciará el levantamiento automáticamente. Usa **Continuar levantamiento** para retomar el avance después de cerrar la página.
+
+Cada bien conserva la fecha y la hora de su primera confirmación como encontrado en ese levantamiento. Si lo devuelves a **Pendiente** o lo marcas **No encontrado**, una nueva confirmación registrará una nueva fecha. En **Reportes**, elige un levantamiento y, opcionalmente, indica **Desde** y **Hasta**. Se incluyen ambos días completos según la hora local del navegador. El filtro se aplica a la lista y al CSV de encontrados. El avance y las discrepancias generales abarcan todo el levantamiento.
+
+Desde el panel puedes **Cerrar levantamiento** aunque queden bienes pendientes. El historial guarda los resultados y las asignaciones del ejercicio cerrado. Al iniciar otro se mantienen los bienes y sus asignaciones, con estados pendientes y observaciones nuevas. Los datos anteriores a esta función se conservan en el levantamiento en curso y los hallazgos sin fecha aparecen en el reporte sin filtro.
+
+El historial se guarda en el almacenamiento local del navegador. Usa el mismo navegador, dirección y puerto para seguir trabajando con él.
+
 ## Pruebas
 
 Consulta [tests/README.md](tests/README.md). Las pruebas usan Chromium real. Sus datos sintéticos están aislados en `tests/inventario_fixture.js` y no se cargan en la aplicación normal. Incluyen arranque vacío, primera importación, persistencia después de recargar, fallos de almacenamiento y el recorrido de revisión.

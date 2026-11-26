@@ -46,14 +46,30 @@ let user = null, chart = null;
 /* Guardado local del inventario. Las credenciales de acceso nunca se guardan aquí. */
 const CLAVE_DATOS = 'scc-inventario-v1';
 let almacenamientoDisponible = true;
+let ultimaVersionGuardada = null;
+let levantamientoActivo = null, historialLevantamientos = [];
+const levantamientoAnterior = () => historialLevantamientos.at(-1);
+const hayRevisionAnterior = () => BIENES.some(b => b.estado !== 'pendiente' || b.obs);
+const levantamientoActual = () => levantamientoActivo
+  ?? (!levantamientoAnterior() && hayRevisionAnterior() ? { nombre: 'Levantamiento anterior', inicio: null } : null);
+const levantamientoCerrado = () => Boolean(levantamientoAnterior() && !levantamientoActivo);
+
+function fechaLocal(iso) {
+  const fecha = new Date(iso);
+  const dosDigitos = numero => String(numero).padStart(2, '0');
+  return `${fecha.getFullYear()}-${dosDigitos(fecha.getMonth() + 1)}-${dosDigitos(fecha.getDate())}`;
+}
+const mostrarFecha = iso => iso ? new Date(iso).toLocaleString('es-MX') : 'Sin fecha registrada';
 const avisoAlmacenamiento = mensaje => {
   $('#storage-status').textContent = mensaje;
   $('#storage-status').hidden = false;
 };
 function estadoDatos() {
-  return { version: 1, bienes: BIENES, custodios: CUSTODIOS, lugares: LUGARES };
+  return { version: 2, bienes: BIENES, custodios: CUSTODIOS, lugares: LUGARES, levantamientoActivo, historialLevantamientos };
 }
 function restaurarDatos(estado) {
+  levantamientoActivo = estado.levantamientoActivo ?? null;
+  historialLevantamientos = estado.historialLevantamientos ?? [];
   BIENES = estado.bienes;
   CUSTODIOS.splice(0, CUSTODIOS.length, ...estado.custodios);
   LUGARES.splice(0, LUGARES.length, ...estado.lugares);
@@ -62,8 +78,14 @@ function actualizarDatos(cambiar) {
   if (!almacenamientoDisponible) return false;
   const anterior = JSON.parse(JSON.stringify(estadoDatos()));
   try {
+    if (localStorage.getItem(CLAVE_DATOS) !== ultimaVersionGuardada) {
+      avisoAlmacenamiento('El inventario cambió en otra pestaña. Recarga esta página antes de guardar.');
+      return false;
+    }
     cambiar();
-    localStorage.setItem(CLAVE_DATOS, JSON.stringify(estadoDatos()));
+    const guardado = JSON.stringify(estadoDatos());
+    localStorage.setItem(CLAVE_DATOS, guardado);
+    ultimaVersionGuardada = guardado;
     $('#storage-status').hidden = true;
     return true;
   } catch {
@@ -76,11 +98,18 @@ try {
   const guardado = localStorage.getItem(CLAVE_DATOS);
   if (guardado) {
     const estado = JSON.parse(guardado);
-    if (estado.version !== 1 || !Array.isArray(estado.bienes) || !Array.isArray(estado.custodios) || !Array.isArray(estado.lugares)
+    if (![1, 2].includes(estado.version) || !Array.isArray(estado.bienes) || !Array.isArray(estado.custodios) || !Array.isArray(estado.lugares)
       || !estado.bienes.every(b => b && typeof b.inv === 'string' && b.inv.trim() && typeof b.desc === 'string' && typeof b.ubic === 'string' && typeof b.obs === 'string' && Object.hasOwn(ESTADOS, b.estado) && Number.isFinite(b.custodio))
       || !estado.custodios.every(c => c && Number.isFinite(c.id) && typeof c.nombre === 'string' && typeof c.empleado === 'string' && typeof c.area === 'string')
       || !estado.lugares.every(l => typeof l === 'string')) throw new Error('Inventario local no válido');
+    if (estado.version === 2 && (
+      !Array.isArray(estado.historialLevantamientos)
+      || estado.historialLevantamientos.some(l => !l || typeof l.nombre !== 'string' || !l.cierre
+        || !Array.isArray(l.bienes) || !Array.isArray(l.custodios))
+      || (estado.levantamientoActivo !== null && typeof estado.levantamientoActivo?.nombre !== 'string')
+    )) throw new Error('Historial de levantamientos no válido');
     restaurarDatos(estado);
+    ultimaVersionGuardada = guardado;
   }
 } catch {
   almacenamientoDisponible = false;
@@ -224,21 +253,62 @@ function route() {
 /* ---------- Vistas ---------- */
 const VISTAS = {
   panel() {
-    const c = conteo(), n = BIENES.length, av = n ? Math.round((n - c.pendiente) / n * 100) : 0;
+    const actual = levantamientoActual(), anterior = levantamientoAnterior();
+    const bienes = actual ? BIENES : anterior?.bienes ?? BIENES;
+    const c = conteo(bienes), n = bienes.length, av = n ? Math.round((n - c.pendiente) / n * 100) : 0;
+    const puedeGestionar = PERMISOS[user.rol].includes('reportes');
     $('#vista').innerHTML = `
+     ${n ? `<section class="card" aria-label="Gestionar levantamiento">
+       <h3>${esc(actual?.nombre ?? (anterior ? 'Sin levantamiento activo' : 'Iniciar levantamiento'))}</h3>
+       ${actual ? `<p>Inicio: ${esc(mostrarFecha(actual.inicio))}</p>
+         <div class="bien-acciones"><a class="btn primary" href="#levantamiento">Continuar levantamiento</a>
+         ${puedeGestionar ? '<button class="btn" type="button" id="cerrar-levantamiento">Cerrar levantamiento</button>' : ''}</div>`
+       : puedeGestionar ? `<form id="nuevo-levantamiento">
+           <label>Nombre del levantamiento <input id="nombre-levantamiento" required maxlength="100" placeholder="Ej. Inventario noviembre 2026"></label>
+           <button class="btn primary" type="submit">Nuevo levantamiento</button>
+         </form>` : anterior ? '<p>El responsable de inventario puede iniciar un nuevo levantamiento.</p>' : ''}
+       ${anterior && puedeGestionar ? '<p><a href="#reportes">Consultar historial en Reportes</a></p>' : ''}
+     </section>` : ''}
      ${!n ? '<div class="card estado-vacio"><h3>Aún no hay una base cargada</h3><p class="muted">Carga tu archivo Excel o CSV desde Importar base para comenzar.</p></div>' : ''}
      <div class="stats">
        <div class="stat"><b>${n}</b><span>Bienes del ejercicio</span></div>
        <div class="stat"><b>${n - c.pendiente}</b><span>Verificados</span></div>
        <div class="stat"><b>${c.pendiente}</b><span>Pendientes</span></div>
        <div class="stat"><b>${av}%</b><span>Avance</span></div>
-       <div class="stat"><b>${BIENES.filter(b => diferenciasAsignacion(b).length).length}</b><span>Alertas de asignación</span></div></div>
-     <div class="card"><h3>Estado del levantamiento</h3>${barra(c)}</div>
+       <div class="stat"><b>${bienes.filter(b => diferenciasAsignacion(b).length).length}</b><span>Alertas de asignación</span></div></div>
+     <div class="card"><h3>${!actual && anterior ? 'Último levantamiento: ' + esc(anterior.nombre) : 'Estado del levantamiento'}</h3>${barra(c)}</div>
      <div class="actions">
        <a href="#importar"><b>Importar base</b><span>Cargar Excel o CSV</span></a>
        <a href="#levantamiento"><b>Levantar inventario</b><span>Revisar bienes por ubicación</span></a>
        <a href="#custodios"><b>Custodios</b><span>Consultar asignaciones</span></a>
        <a href="#reportes"><b>Reportes</b><span>Consultar resultados</span></a></div>`;
+    const nuevo = $('#nuevo-levantamiento');
+    if (nuevo) nuevo.onsubmit = e => {
+      e.preventDefault();
+      const nombre = $('#nombre-levantamiento').value.trim();
+      if (!nombre || levantamientoActual()) return;
+      if (!actualizarDatos(() => {
+        levantamientoActivo = { nombre, inicio: new Date().toISOString() };
+        for (const bien of BIENES) {
+          bien.estado = 'pendiente';
+          bien.obs = '';
+          delete bien.verificacion;
+          delete bien.encontradoEn;
+        }
+      })) return;
+      location.hash = 'levantamiento';
+    };
+    const cerrar = $('#cerrar-levantamiento');
+    if (cerrar) cerrar.onclick = () => {
+      if (!confirm(`¿Cerrar «${actual.nombre}»? El avance quedará guardado en el historial.`)) return;
+      if (!actualizarDatos(() => {
+        historialLevantamientos.push(structuredClone({
+          ...actual, cierre: new Date().toISOString(), bienes: BIENES, custodios: CUSTODIOS
+        }));
+        levantamientoActivo = null;
+      })) return;
+      this.panel();
+    };
   },
 
   importar() {
@@ -258,12 +328,17 @@ const VISTAS = {
   },
 
   levantamiento() {
+    if (levantamientoCerrado()) {
+      $('#vista').innerHTML = '<div class="card estado-vacio"><h3>No hay un levantamiento activo</h3><p>Abre el Panel principal para iniciar un nuevo levantamiento.</p><a class="btn primary" href="#panel">Ir al Panel principal</a></div>';
+      return;
+    }
     if (!BIENES.length) {
       $('#vista').innerHTML = '<div class="card estado-vacio"><h3>No hay bienes cargados</h3><p class="muted">Importa tu hoja de inventario para comenzar el levantamiento.</p>' + (PERMISOS[user.rol].includes('importar') ? '<a class="btn primary" href="#importar">Importar base</a>' : '<p>Solicita la carga de la base al responsable de inventario.</p>') + '</div>';
       return;
     }
     $('#vista').innerHTML = `
       <div class="card">
+        <p id="levantamiento-identidad" class="muted small" hidden></p>
         <form id="revision-form" aria-labelledby="revision-titulo">
           <h3 id="revision-titulo">Revisar la hoja de inventario</h3>
           <p class="muted small" id="revision-ayuda">Escribe el número de inventario y presiona Enter para ver la ubicación y el custodio de la hoja. Si ambos coinciden con lo que observas, presiona Enter de nuevo para marcar el bien como Encontrado. Si hay diferencias, selecciona los datos observados y pulsa Usar selección antes de confirmar.</p>
@@ -337,6 +412,10 @@ const VISTAS = {
         <button type="button" class="btn" data-editar="${i}">Corregir asignación</button></article>`).join('');
     };
     const pintar = () => {
+      const actual = levantamientoActual();
+      const identidad = $('#levantamiento-identidad');
+      identidad.hidden = !actual;
+      identidad.textContent = actual ? `${actual.nombre} · Inicio: ${mostrarFecha(actual.inicio)}` : '';
       pintarResultado(); pintarAlertas();
       const activo = Boolean(lugar.value || custodio.value);
       $('#controles-ubicacion').hidden = !activo;
@@ -378,8 +457,10 @@ const VISTAS = {
       const completo = asignacionCompleta(propuesta);
       if (completo) {
         if (!actualizarDatos(() => {
+          levantamientoActivo ??= levantamientoActual() ?? { nombre: 'Levantamiento en curso', inicio: new Date().toISOString() };
           b.verificacion = { ...propuesta, registrada: { ubic: b.ubic, custodio: b.custodio } };
           b.estado = 'encontrado';
+          b.encontradoEn ??= new Date().toISOString();
         })) return;
       }
       ultimo = { i, verificado: Boolean(completo) };
@@ -494,8 +575,10 @@ const VISTAS = {
       const i = Number(boton.dataset.i);
       if (boton.dataset.e === 'encontrado') { revisar(i); return; }
       if (!actualizarDatos(() => {
+        if (boton.dataset.e === 'no') levantamientoActivo ??= levantamientoActual() ?? { nombre: 'Levantamiento en curso', inicio: new Date().toISOString() };
         BIENES[i].estado = boton.dataset.e;
         delete BIENES[i].verificacion;
+        delete BIENES[i].encontradoEn;
       })) return;
       if (ultimo?.i === i) ultimo = null;
       pintar(); toast('Verificación registrada: ' + ESTADOS[boton.dataset.e]);
@@ -527,38 +610,105 @@ const VISTAS = {
   },
 
   reportes() {
-    const c = conteo();
-    const fila = (n, l) => { const k = conteo(l); return `<tr><td>${esc(n)}</td><td>${l.length}</td><td>${k.encontrado}</td><td>${k.no}</td><td>${k.pendiente}</td></tr>`; };
-    const disc = BIENES.filter(b => b.estado === 'no' || diferenciasAsignacion(b).length);
+    const anterior = levantamientoAnterior();
+    const actual = levantamientoActual();
+    const opciones = [...historialLevantamientos].reverse();
+    if (actual || !anterior) {
+      opciones.unshift({ ...(actual ?? { nombre: 'Inventario actual' }), bienes: BIENES, custodios: CUSTODIOS });
+    }
     $('#vista').innerHTML = `
-     <div class="tools"><button class="btn primary" id="csv">Exportar discrepancias (CSV)</button></div>
-     <div class="card"><h3>Resultados generales</h3><div style="max-width:420px;height:240px"><canvas id="ch"></canvas></div></div>
-     <div class="card tbl"><h3>Resultados por custodio</h3><table><thead><tr><th>Custodio</th><th>Total</th><th>Encontrados</th><th>No encontrados</th><th>Pendientes</th></tr></thead><tbody>
-       ${CUSTODIOS.map(x => fila(x.nombre, BIENES.filter(b => b.custodio == x.id))).join('')}</tbody></table></div>
-     <div class="card tbl" id="reporte-discrepancias"><h3>Bienes con discrepancias (${disc.length})</h3><table><thead><tr><th>Inventario</th><th>Descripción</th><th>Custodio en la hoja</th><th>Custodio observado</th><th>Ubicación en la hoja</th><th>Ubicación observada</th><th>Estado</th><th>Alerta</th></tr></thead><tbody>
-       ${disc.map(b => `<tr><td>${esc(b.inv)}</td><td>${esc(b.desc)}</td><td>${esc(cust(b.custodio))}</td><td>${b.verificacion ? esc(cust(b.verificacion.custodio)) : '—'}</td><td>${esc(ubicacion(b))}</td><td>${esc(b.verificacion?.ubic || '—')}</td><td>${badge(b.estado)}</td><td>${esc(b.estado === 'no' ? 'No encontrado' : diferenciasAsignacion(b).join(' y '))}</td></tr>`).join('')}</tbody></table></div>`;
-    const css = getComputedStyle(document.documentElement);
-    if (chart) chart.destroy();
-    if (!BIENES.length || typeof Chart === 'undefined') {
-      const aviso = document.createElement('p');
-      aviso.className = 'muted small';
-      aviso.textContent = !BIENES.length ? 'Importa tu base de inventario para ver los resultados.' : 'La gráfica no está disponible. Los resultados y la exportación se muestran abajo.';
-      $('#ch').parentElement.style.height = 'auto';
-      $('#ch').replaceWith(aviso);
-    } else chart = new Chart($('#ch'), {
-      type: 'doughnut', data: {
-        labels: Object.values(ESTADOS),
-        datasets: [{ data: Object.keys(c).map(k => c[k]), backgroundColor: Object.keys(c).map(k => css.getPropertyValue(COLOR[k]).trim()), borderWidth: 0 }]
-      },
-      options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: css.getPropertyValue('--ink').trim() } } } }
-    });
-    $('#csv').onclick = () => {
-      const filas = [['Inventario', 'Descripcion', 'Custodio en hoja', 'Custodio observado', 'Ubicacion en hoja', 'Ubicacion observada', 'Estado', 'Alerta', 'Observaciones'],
-      ...disc.map(b => [b.inv, b.desc, cust(b.custodio), b.verificacion ? cust(b.verificacion.custodio) : '', ubicacion(b), b.verificacion?.ubic || '', ESTADOS[b.estado], b.estado === 'no' ? 'No encontrado' : diferenciasAsignacion(b).join(' y '), b.obs])];
-      const txt = '\ufeff' + filas.map(r => r.map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')).join('\n');
-      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([txt], { type: 'text/csv' }));
-      a.download = 'discrepancias-2026.csv'; a.click();
+      <div class="card">
+        <div class="tools">
+          <label>Levantamiento <select id="reporte-levantamiento">${opciones.map((l, i) =>
+            `<option value="${i}">${esc(l.nombre)} · ${l.cierre ? esc(fechaLocal(l.cierre)) + ' · Cerrado' : 'En curso'}</option>`).join('')}</select></label>
+          <label>Desde <input type="date" id="reporte-desde"></label>
+          <label>Hasta <input type="date" id="reporte-hasta"></label>
+        </div>
+        <p id="reporte-fechas" class="muted small"></p>
+        <p id="reporte-error" class="note" role="alert" hidden>La fecha Desde debe ser anterior o igual a Hasta.</p>
+      </div>
+      <div id="reporte-resultados"></div>`;
+
+    const exportar = (archivo, filas) => {
+      const texto = '\ufeff' + filas.map(fila => fila.map(valor => {
+        const texto = String(valor ?? '');
+        const seguro = /^[\s]*[=+@-]|^[\t\r\n]/.test(texto) ? "'" + texto : texto;
+        return '"' + seguro.replace(/"/g, '""') + '"';
+      }).join(',')).join('\r\n');
+      const enlace = document.createElement('a');
+      enlace.href = URL.createObjectURL(new Blob([texto], { type: 'text/csv;charset=utf-8' }));
+      enlace.download = archivo;
+      enlace.click();
+      setTimeout(() => URL.revokeObjectURL(enlace.href), 1000);
     };
+
+    const pintar = () => {
+      const l = opciones[Number($('#reporte-levantamiento').value)];
+      const desde = $('#reporte-desde').value, hasta = $('#reporte-hasta').value;
+      const invalido = Boolean(desde && hasta && desde > hasta);
+      const resultados = $('#reporte-resultados');
+      if (chart) { chart.destroy(); chart = null; }
+      $('#reporte-fechas').textContent = `Inicio: ${mostrarFecha(l.inicio)} · Cierre: ${l.cierre ? mostrarFecha(l.cierre) : 'En curso'}`;
+      $('#reporte-error').hidden = !invalido;
+      resultados.hidden = invalido;
+      if (invalido) return;
+
+      const c = conteo(l.bienes);
+      const av = l.bienes.length ? Math.round((l.bienes.length - c.pendiente) / l.bienes.length * 100) : 0;
+      const nombreCustodio = id => l.custodios.find(x => x.id == id)?.nombre ?? '—';
+      const hallazgos = l.bienes.filter(b => {
+        if (b.estado !== 'encontrado') return false;
+        if (!desde && !hasta) return true;
+        if (!b.encontradoEn) return false;
+        const dia = fechaLocal(b.encontradoEn);
+        return (!desde || dia >= desde) && (!hasta || dia <= hasta);
+      }).sort((a, b) => (b.encontradoEn ?? '').localeCompare(a.encontradoEn ?? ''));
+      const disc = l.bienes.filter(b => b.estado === 'no' || diferenciasAsignacion(b).length);
+      const columnas = ['Inventario', 'Descripcion', 'Custodio en hoja', 'Custodio observado', 'Ubicacion en hoja', 'Ubicacion observada', 'Estado', 'Alerta', 'Observaciones'];
+      const datosBien = (b, registrada = b) => [
+        b.inv, b.desc, nombreCustodio(registrada.custodio), b.verificacion ? nombreCustodio(b.verificacion.custodio) : '',
+        ubicacion(registrada), b.verificacion?.ubic || '', ESTADOS[b.estado],
+        b.estado === 'no' ? 'No encontrado' : diferenciasAsignacion({ ...registrada, verificacion: b.verificacion }).join(' y '), b.obs
+      ];
+      const filasEncontrados = hallazgos.map(b => [mostrarFecha(b.encontradoEn), ...datosBien(b, b.verificacion?.registrada ?? b)]);
+      const filasDiscrepancias = disc.map(b => datosBien(b));
+      const tabla = (cabecera, filas) => `<div class="tbl"><table><thead><tr>${cabecera.map(x => `<th scope="col">${esc(x)}</th>`).join('')}</tr></thead>
+        <tbody>${filas.map(fila => `<tr>${fila.map(x => `<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+      const porCustodio = l.custodios.map(x => {
+        const bienes = l.bienes.filter(b => b.custodio == x.id), k = conteo(bienes);
+        return [x.nombre, bienes.length, k.encontrado, k.no, k.pendiente];
+      });
+      resultados.innerHTML = `
+        <div class="card" id="reporte-encontrados">
+          <h3>Bienes encontrados (${hallazgos.length})</h3>
+          ${hallazgos.length ? tabla(['Fecha del hallazgo', ...columnas], filasEncontrados) : '<p>No hay hallazgos para la selección.</p>'}
+          ${(desde || hasta) && l.bienes.some(b => b.estado === 'encontrado' && !b.encontradoEn) ? '<p class="muted small">Los hallazgos anteriores sin fecha aparecen al quitar el filtro.</p>' : ''}
+          <button class="btn primary" id="csv-encontrados" ${hallazgos.length ? '' : 'disabled'}>Exportar encontrados (CSV)</button>
+        </div>
+        <div class="card"><h3>Avance total del levantamiento · ${av}%</h3>${barra(c)}
+          ${l.bienes.length && typeof Chart !== 'undefined' ? '<div style="max-width:420px;height:240px"><canvas id="ch"></canvas></div>' : ''}</div>
+        <div class="card"><h3>Resultados por custodio</h3>${tabla(['Custodio', 'Total', 'Encontrados', 'No encontrados', 'Pendientes'], porCustodio)}</div>
+        <div class="card" id="reporte-discrepancias"><h3>Bienes con discrepancias (${disc.length})</h3>
+          ${tabla(columnas.slice(0, -1), filasDiscrepancias.map(fila => fila.slice(0, -1)))}
+          <button class="btn" id="csv">Exportar discrepancias (CSV)</button></div>`;
+      if ($('#ch')) {
+        const css = getComputedStyle(document.documentElement);
+        chart = new Chart($('#ch'), {
+          type: 'doughnut', data: {
+            labels: Object.values(ESTADOS),
+            datasets: [{ data: Object.values(c), backgroundColor: Object.values(COLOR).map(color => css.getPropertyValue(color).trim()), borderWidth: 0 }]
+          },
+          options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: css.getPropertyValue('--ink').trim() } } } }
+        });
+      }
+      $('#csv-encontrados').onclick = () => exportar('bienes-encontrados.csv', [
+        ['Levantamiento', 'Fecha del hallazgo', ...columnas],
+        ...filasEncontrados.map(fila => [l.nombre, ...fila])
+      ]);
+      $('#csv').onclick = () => exportar('discrepancias.csv', [columnas, ...filasDiscrepancias]);
+    };
+    ['#reporte-levantamiento', '#reporte-desde', '#reporte-hasta'].forEach(selector => $(selector).onchange = pintar);
+    pintar();
   }
 };
 
