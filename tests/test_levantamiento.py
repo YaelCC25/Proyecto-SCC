@@ -241,6 +241,50 @@ class TestLevantamiento(unittest.TestCase):
         expect(confirmar).to_be_disabled()
         expect(self.page.locator('#aviso-importacion')).to_contain_text('Selecciona la columna Número de inventario')
 
+    def test_reemplazo_de_base_conserva_el_levantamiento_anterior(self):
+        self.scan()
+        self.inv.press('Enter')
+        self.go('importar')
+        self.page.evaluate("""() => vistaPrevia([
+            { Inventario: 'INV-00100', Descripción: 'Bien del maestro', Custodio: 'Nuevo custodio', Ubicación: 'CCL' },
+            { Inventario: 'INV-00100', Descripción: 'Duplicado' },
+            { Inventario: '', Descripción: 'Sin inventario' }
+        ], 'base-maestro.xlsx')""")
+        expect(self.page.locator('#ok')).to_be_disabled()
+        self.page.locator('#modo-importacion').select_option('reemplazar')
+        expect(self.page.locator('#res .stat b')).to_have_text(['3', '1', '1', '1'])
+        boton = self.page.get_by_role('button', name='Confirmar reemplazo')
+        self.page.once('dialog', lambda dialog: dialog.dismiss())
+        boton.click()
+        self.assertEqual(self.page.evaluate('BIENES.length'), 48)
+
+        self.page.evaluate("""() => {
+            window.guardarOriginal = Storage.prototype.setItem;
+            Storage.prototype.setItem = () => { throw new Error('Sin espacio'); };
+        }""")
+        self.page.once('dialog', lambda dialog: dialog.accept())
+        boton.click()
+        expect(self.page.locator('#storage-status')).to_contain_text('La operación no se aplicó')
+        self.assertEqual(self.page.evaluate('BIENES.length'), 48)
+        self.assertEqual(self.page.evaluate('historialLevantamientos.length'), 0)
+        self.page.evaluate('() => { Storage.prototype.setItem = window.guardarOriginal; }')
+
+        self.page.once('dialog', lambda dialog: dialog.accept())
+        boton.click()
+        expect(self.page.locator('#titulo')).to_have_text('Panel principal')
+        expect(self.page.locator('.stat b')).to_have_text(['1', '0', '1', '0%', '0'])
+        self.page.reload()
+        self.page.locator('#l-correo').fill('operador@institucion.mx')
+        self.page.locator('#l-pass').fill('Clave-de-prueba')
+        self.page.locator('#l-ok').click()
+        self.assertEqual(self.asset()['desc'], 'Bien del maestro')
+        self.assertEqual(self.asset()['estado'], 'pendiente')
+        self.assertEqual(self.page.evaluate('CUSTODIOS.map(c => c.nombre)'), ['Nuevo custodio'])
+        self.assertEqual(self.page.evaluate('LUGARES'), ['CCL'])
+        self.go('reportes')
+        expect(self.page.locator('#reporte-encontrados tbody')).to_contain_text('Ana Torres')
+        expect(self.page.locator('#reporte-encontrados tbody')).to_contain_text('Equipo de cómputo')
+
     def test_correcciones_y_observaciones_se_conservan_al_recargar(self):
         self.select(ubic='SITE', cust='2')
         self.confirmar_seleccion()

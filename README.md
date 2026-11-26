@@ -24,6 +24,8 @@ El correo y la contraseña comienzan vacíos. Para entrar se exige un correo con
 
 Custodios y ubicaciones registradas se crean a partir del archivo. Los lugares donde se encuentra físicamente un bien se eligen de un catálogo fijo de 29 nombres, independiente de la hoja importada. Un bien sin estos datos puede consultarse; para registrar una revisión y corregir su asignación se necesita un custodio y una ubicación válidos.
 
+Para usar otra base en el mismo navegador, carga el archivo y elige **Reemplazar la base actual** en **Modo de importación**. Revisa la vista previa y confirma el reemplazo. Se usa el contenido del nuevo archivo, incluso cuando un número de inventario coincide con la base anterior. Los bienes quedan pendientes y sus catálogos se reconstruyen con el nuevo archivo. Si había un levantamiento en curso, se cierra y queda disponible en **Reportes**.
+
 ## Guardado y alcance
 
 La base importada, las revisiones, las correcciones de asignación y las observaciones se guardan automáticamente en el almacenamiento local del navegador. Se restauran al recargar; las credenciales de acceso no se guardan.

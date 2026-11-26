@@ -67,6 +67,12 @@ const avisoAlmacenamiento = mensaje => {
 function estadoDatos() {
   return { version: 2, bienes: BIENES, custodios: CUSTODIOS, lugares: LUGARES, levantamientoActivo, historialLevantamientos };
 }
+function archivarLevantamiento(actual) {
+  historialLevantamientos.push(structuredClone({
+    ...actual, cierre: new Date().toISOString(), bienes: BIENES, custodios: CUSTODIOS
+  }));
+  levantamientoActivo = null;
+}
 function restaurarDatos(estado) {
   levantamientoActivo = estado.levantamientoActivo ?? null;
   historialLevantamientos = estado.historialLevantamientos ?? [];
@@ -254,8 +260,7 @@ function route() {
 const VISTAS = {
   panel() {
     const actual = levantamientoActual(), anterior = levantamientoAnterior();
-    const bienes = actual ? BIENES : anterior?.bienes ?? BIENES;
-    const c = conteo(bienes), n = bienes.length, av = n ? Math.round((n - c.pendiente) / n * 100) : 0;
+    const c = conteo(), n = BIENES.length, av = n ? Math.round((n - c.pendiente) / n * 100) : 0;
     const puedeGestionar = PERMISOS[user.rol].includes('reportes');
     $('#vista').innerHTML = `
      ${n ? `<section class="card" aria-label="Gestionar levantamiento">
@@ -275,8 +280,8 @@ const VISTAS = {
        <div class="stat"><b>${n - c.pendiente}</b><span>Verificados</span></div>
        <div class="stat"><b>${c.pendiente}</b><span>Pendientes</span></div>
        <div class="stat"><b>${av}%</b><span>Avance</span></div>
-       <div class="stat"><b>${bienes.filter(b => diferenciasAsignacion(b).length).length}</b><span>Alertas de asignación</span></div></div>
-     <div class="card"><h3>${!actual && anterior ? 'Último levantamiento: ' + esc(anterior.nombre) : 'Estado del levantamiento'}</h3>${barra(c)}</div>
+       <div class="stat"><b>${BIENES.filter(b => diferenciasAsignacion(b).length).length}</b><span>Alertas de asignación</span></div></div>
+     <div class="card"><h3>${actual ? 'Estado del levantamiento' : 'Estado de la base actual'}</h3>${barra(c)}</div>
      <div class="actions">
        <a href="#importar"><b>Importar base</b><span>Cargar Excel o CSV</span></a>
        <a href="#levantamiento"><b>Levantar inventario</b><span>Revisar bienes por ubicación</span></a>
@@ -301,19 +306,16 @@ const VISTAS = {
     const cerrar = $('#cerrar-levantamiento');
     if (cerrar) cerrar.onclick = () => {
       if (!confirm(`¿Cerrar «${actual.nombre}»? El avance quedará guardado en el historial.`)) return;
-      if (!actualizarDatos(() => {
-        historialLevantamientos.push(structuredClone({
-          ...actual, cierre: new Date().toISOString(), bienes: BIENES, custodios: CUSTODIOS
-        }));
-        levantamientoActivo = null;
-      })) return;
+      if (!actualizarDatos(() => archivarLevantamiento(actual))) return;
       this.panel();
     };
   },
 
   importar() {
     $('#vista').innerHTML = `
-     <div class="note">Importar no es verificar: los bienes nuevos quedan en estado Pendiente.</div>
+     <div class="note">${BIENES.length
+       ? 'Este navegador tiene una base guardada. Carga un archivo para agregar bienes o reemplazar la base actual.'
+       : 'Aún no hay una base cargada. Selecciona el archivo de inventario con el que vas a trabajar.'}</div>
      <div class="card"><h3>Archivo</h3>
        <div class="drop" id="drop"><p><b>Arrastra tu archivo aquí</b></p><p class="muted small">Formatos admitidos: Excel (.xlsx) y CSV</p>
        <button class="btn" type="button" id="pick">Seleccionar archivo</button>
@@ -774,12 +776,17 @@ function vistaPrevia(filas, nombre) {
   $('#prev').innerHTML = `
      <div class="card"><h3>Relacionar columnas de ${esc(nombre)}</h3><div class="grid2">
        ${CAMPOS.map(([k, t]) => `<label>${t}<select data-k="${k}"><option value="">(no importar)</option>${cols.map(c => `<option value="${esc(c)}" ${sug[k] === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>`).join('')}</div></div>
+     ${BIENES.length ? `<div class="card"><label>Modo de importación
+       <select id="modo-importacion"><option value="agregar">Agregar bienes nuevos</option><option value="reemplazar">Reemplazar la base actual</option></select>
+     </label></div>` : ''}
      <div class="card" id="res"></div>
      <div class="card tbl"><h3>Vista previa (primeras 5 filas)</h3><table><thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>
        ${filas.slice(0, 5).map(r => `<tr>${cols.map(c => `<td>${esc(r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
   const resumen = () => {
     const m = {}; document.querySelectorAll('[data-k]').forEach(s => m[s.dataset.k] = s.value);
-    const registrados = new Set(BIENES.map(b => claveInventario(b.inv)));
+    const reemplazar = $('#modo-importacion')?.value === 'reemplazar';
+    const actual = reemplazar ? levantamientoActual() : null;
+    const registrados = new Set(reemplazar ? [] : BIENES.map(b => claveInventario(b.inv)));
     const vistos = new Set();
     const nuevas = [];
     let duplicados = 0, vacios = 0, existentes = 0;
@@ -792,28 +799,46 @@ function vistaPrevia(filas, nombre) {
       else nuevas.push(fila);
     }
     const aviso = !m.inv ? 'Selecciona la columna Número de inventario para continuar.'
+      : reemplazar ? nuevas.length
+        ? 'La base actual se reemplazará por los bienes de este archivo. Todos quedarán pendientes.'
+          + (actual ? ' El levantamiento en curso se cerrará y se guardará en el historial.' : '')
+        : 'El archivo necesita al menos un número de inventario válido para reemplazar la base.'
       : !nuevas.length ? 'No hay bienes nuevos para importar. El inventario guardado se conserva tal como está.'
       : 'Se agregarán solo los bienes nuevos, como Pendientes.';
     $('#res').innerHTML = `<h3>Resumen antes de confirmar</h3>
          <div class="stats"><div class="stat"><b>${filas.length}</b><span>Registros leídos</span></div>
-         <div class="stat"><b>${nuevas.length}</b><span>Bienes nuevos</span></div>
-         <div class="stat"><b>${existentes}</b><span>Ya existen</span></div>
+         <div class="stat"><b>${nuevas.length}</b><span>${reemplazar ? 'Bienes de la nueva base' : 'Bienes nuevos'}</span></div>
+         ${reemplazar ? '' : `<div class="stat"><b>${existentes}</b><span>Ya existen</span></div>`}
          <div class="stat"><b>${duplicados}</b><span>Duplicados en el archivo</span></div>
          <div class="stat"><b>${vacios}</b><span>Sin identificador</span></div></div>
-         <button class="btn primary" id="ok" type="button" aria-describedby="aviso-importacion" ${nuevas.length ? '' : 'disabled'}>Confirmar importación</button>
+         <button class="btn primary" id="ok" type="button" aria-describedby="aviso-importacion" ${nuevas.length ? '' : 'disabled'}>${reemplazar ? 'Confirmar reemplazo' : 'Confirmar importación'}</button>
          <p id="aviso-importacion" class="note" role="status">${aviso}</p>`;
     $('#ok').onclick = () => {
-      if (!confirm(`¿Importar ${nuevas.length} bienes nuevos de ${nombre}?`)) return;
-      if (!actualizarDatos(() => nuevas.forEach(r => {
-        const id = String(r[m.inv] ?? '').trim();
-        const nombreC = m.custodio ? String(r[m.custodio] ?? '').trim() : '';
-        const c = registrarCustodio(nombreC);
-        const ub = registrarLugar(m.ubic ? r[m.ubic] : '');
-        BIENES.push({ inv: id, desc: m.desc ? String(r[m.desc] ?? '') : '', custodio: c ? c.id : 0, ubic: ub, estado: 'pendiente', obs: '' });
-      }))) return;
+      const mensaje = reemplazar
+        ? `¿Reemplazar los ${BIENES.length} bienes de la base actual por los ${nuevas.length} de ${nombre}?`
+          + (actual ? ' El levantamiento en curso se cerrará y conservará en el historial.' : '')
+        : `¿Importar ${nuevas.length} bienes nuevos de ${nombre}?`;
+      if (!confirm(mensaje)) return;
+      if (!actualizarDatos(() => {
+        if (reemplazar) {
+          if (actual) archivarLevantamiento(actual);
+          BIENES = [];
+          CUSTODIOS.length = 0;
+          LUGARES.length = 0;
+        }
+        for (const r of nuevas) {
+          const id = String(r[m.inv] ?? '').trim();
+          const nombreC = m.custodio ? String(r[m.custodio] ?? '').trim() : '';
+          const c = registrarCustodio(nombreC);
+          const ub = registrarLugar(m.ubic ? r[m.ubic] : '');
+          BIENES.push({ inv: id, desc: m.desc ? String(r[m.desc] ?? '') : '', custodio: c ? c.id : 0, ubic: ub, estado: 'pendiente', obs: '' });
+        }
+      })) return;
       $('#ok').disabled = true;
-      toast(nuevas.length + ' bienes importados como Pendientes'); location.hash = 'panel';
+      toast(reemplazar ? `Base reemplazada. ${nuevas.length} bienes pendientes` : `${nuevas.length} bienes importados como Pendientes`);
+      location.hash = 'panel';
     };
   };
-  document.querySelectorAll('[data-k]').forEach(s => s.onchange = resumen); resumen();
+  document.querySelectorAll('#prev select').forEach(s => s.onchange = resumen);
+  resumen();
 }
