@@ -220,6 +220,27 @@ class TestLevantamiento(unittest.TestCase):
         self.assertEqual(self.asset()['ubic'], 'Oficina real')
         self.assertEqual(self.page.evaluate('CUSTODIOS[0].id'), 1)
 
+    def test_importacion_de_128_bienes_existentes_explicita_por_que_no_confirma(self):
+        self.go('importar')
+        self.page.evaluate("""() => {
+            for (let i = 0; i < 80; i++) {
+                BIENES.push({ ...BIENES[0], inv: 'EXISTENTE-' + i });
+            }
+            const filas = BIENES.map(b => ({ Inventario: ' ' + b.inv.toLowerCase() + ' ' }));
+            vistaPrevia(filas, 'inventario.xlsx');
+        }""")
+        expect(self.page.locator('#res .stat b')).to_have_text(['128', '0', '128', '0', '0'])
+        confirmar = self.page.get_by_role('button', name='Confirmar importación')
+        expect(confirmar).to_be_disabled()
+        expect(confirmar).to_have_css('cursor', 'not-allowed')
+        expect(self.page.locator('#aviso-importacion')).to_contain_text('No hay bienes nuevos para importar')
+        self.assertEqual(self.page.evaluate('BIENES.length'), 128)
+        self.assertIsNone(self.page.evaluate('localStorage.getItem(CLAVE_DATOS)'))
+
+        self.page.locator('[data-k="inv"]').select_option('')
+        expect(confirmar).to_be_disabled()
+        expect(self.page.locator('#aviso-importacion')).to_contain_text('Selecciona la columna Número de inventario')
+
     def test_correcciones_y_observaciones_se_conservan_al_recargar(self):
         self.select(ubic='SITE', cust='2')
         self.confirmar_seleccion()

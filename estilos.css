@@ -123,6 +123,13 @@ label>textarea {
   background: var(--accent-d)
 }
 
+.btn:disabled {
+  background: var(--card);
+  border-color: var(--line);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
 .link {
   background: none;
   border: 0;

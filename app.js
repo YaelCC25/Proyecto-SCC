@@ -319,12 +319,21 @@ const VISTAS = {
        <button class="btn" type="button" id="pick">Seleccionar archivo</button>
        <input type="file" id="file" accept=".xlsx,.xls,.csv" hidden></div></div>
      <div id="prev"></div>`;
-    const d = $('#drop'), f = $('#file');
+    const d = $('#drop'), f = $('#file'), vista = $('#prev');
+    let lectura;
+    const cargar = archivo => {
+      if (!archivo) return;
+      lectura?.abort();
+      lectura = leer(archivo, vista);
+    };
     $('#pick').onclick = () => f.click();
     d.ondragover = e => { e.preventDefault(); d.classList.add('over'); };
     d.ondragleave = () => d.classList.remove('over');
-    d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); leer(e.dataTransfer.files[0]); };
-    f.onchange = () => leer(f.files[0]);
+    d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); cargar(e.dataTransfer.files[0]); };
+    f.onchange = () => {
+      cargar(f.files[0]);
+      f.value = '';
+    };
   },
 
   levantamiento() {
@@ -738,11 +747,13 @@ function registrarCustodio(nombre) {
 /* ---------- Importación: lectura, mapeo y vista previa ---------- */
 const claveInventario = valor => String(valor ?? '').trim().toLocaleLowerCase('es');
 const CAMPOS = [['inv', 'Número de inventario'], ['desc', 'Descripción'], ['custodio', 'Custodio'], ['ubic', 'Ubicación']];
-function leer(file) {
-  if (!file) return;
+function leer(file, vista) {
+  vista.replaceChildren();
   if (typeof XLSX === 'undefined') return toast('No se pudo cargar el lector de Excel/CSV. Comprueba tu conexión y vuelve a abrir la página.');
   const rd = new FileReader();
+  const sigueVisible = () => vista.isConnected && user;
   rd.onload = e => {
+    if (!sigueVisible()) return;
     try {
       const wb = XLSX.read(e.target.result, { type: 'array' });
       const filas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: false });
@@ -750,8 +761,11 @@ function leer(file) {
       vistaPrevia(filas, file.name);
     } catch { toast('No se pudo leer el archivo'); }
   };
-  rd.onerror = () => toast('No se pudo abrir el archivo. Vuelve a seleccionarlo.');
+  rd.onerror = () => {
+    if (sigueVisible()) toast('No se pudo abrir el archivo. Vuelve a seleccionarlo.');
+  };
   rd.readAsArrayBuffer(file);
+  return rd;
 }
 function vistaPrevia(filas, nombre) {
   const cols = Object.keys(filas[0]);
@@ -759,43 +773,46 @@ function vistaPrevia(filas, nombre) {
   const sug = { inv: adivina('inv') || adivina('num'), desc: adivina('desc'), custodio: adivina('custod') || adivina('resp'), ubic: adivina('ubic') };
   $('#prev').innerHTML = `
      <div class="card"><h3>Relacionar columnas de ${esc(nombre)}</h3><div class="grid2">
-       ${CAMPOS.map(([k, t]) => `<label>${t}<select data-k="${k}"><option value="">(no importar)</option>${cols.map(c => `<option ${sug[k] === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>`).join('')}</div></div>
+       ${CAMPOS.map(([k, t]) => `<label>${t}<select data-k="${k}"><option value="">(no importar)</option>${cols.map(c => `<option value="${esc(c)}" ${sug[k] === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>`).join('')}</div></div>
      <div class="card" id="res"></div>
      <div class="card tbl"><h3>Vista previa (primeras 5 filas)</h3><table><thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>
        ${filas.slice(0, 5).map(r => `<tr>${cols.map(c => `<td>${esc(r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
   const resumen = () => {
     const m = {}; document.querySelectorAll('[data-k]').forEach(s => m[s.dataset.k] = s.value);
-    const ids = m.inv ? filas.map(r => claveInventario(r[m.inv])) : [];
     const registrados = new Set(BIENES.map(b => claveInventario(b.inv)));
     const vistos = new Set();
-    let nuevos = 0, duplicados = 0, vacios = 0, existentes = 0;
-    ids.forEach(id => {
-      if (!id) { vacios++; return; }
-      if (vistos.has(id)) { duplicados++; return; }
+    const nuevas = [];
+    let duplicados = 0, vacios = 0, existentes = 0;
+    if (m.inv) for (const fila of filas) {
+      const id = claveInventario(fila[m.inv]);
+      if (!id) { vacios++; continue; }
+      if (vistos.has(id)) { duplicados++; continue; }
       vistos.add(id);
       if (registrados.has(id)) existentes++;
-      else nuevos++;
-    });
+      else nuevas.push(fila);
+    }
+    const aviso = !m.inv ? 'Selecciona la columna Número de inventario para continuar.'
+      : !nuevas.length ? 'No hay bienes nuevos para importar. El inventario guardado se conserva tal como está.'
+      : 'Se agregarán solo los bienes nuevos, como Pendientes.';
     $('#res').innerHTML = `<h3>Resumen antes de confirmar</h3>
          <div class="stats"><div class="stat"><b>${filas.length}</b><span>Registros leídos</span></div>
-         <div class="stat"><b>${nuevos}</b><span>Bienes nuevos</span></div>
+         <div class="stat"><b>${nuevas.length}</b><span>Bienes nuevos</span></div>
          <div class="stat"><b>${existentes}</b><span>Ya existen</span></div>
          <div class="stat"><b>${duplicados}</b><span>Duplicados en el archivo</span></div>
          <div class="stat"><b>${vacios}</b><span>Sin identificador</span></div></div>
-         <button class="btn primary" id="ok" ${m.inv && nuevos ? '' : 'disabled'}>Confirmar importación</button>
-         <p class="muted small">Se agregan solo los bienes nuevos, como Pendientes. Nada se elimina ni se marca como verificado.</p>`;
+         <button class="btn primary" id="ok" type="button" aria-describedby="aviso-importacion" ${nuevas.length ? '' : 'disabled'}>Confirmar importación</button>
+         <p id="aviso-importacion" class="note" role="status">${aviso}</p>`;
     $('#ok').onclick = () => {
-      if (!confirm(`¿Importar los bienes nuevos de ${nombre}?`)) return;
-      let n = 0;
-      if (!actualizarDatos(() => filas.forEach(r => {
+      if (!confirm(`¿Importar ${nuevas.length} bienes nuevos de ${nombre}?`)) return;
+      if (!actualizarDatos(() => nuevas.forEach(r => {
         const id = String(r[m.inv] ?? '').trim();
-        if (!id || BIENES.some(b => claveInventario(b.inv) === claveInventario(id))) return;
         const nombreC = m.custodio ? String(r[m.custodio] ?? '').trim() : '';
         const c = registrarCustodio(nombreC);
         const ub = registrarLugar(m.ubic ? r[m.ubic] : '');
-        BIENES.push({ inv: id, desc: m.desc ? String(r[m.desc] ?? '') : '', custodio: c ? c.id : 0, ubic: ub, estado: 'pendiente', obs: '' }); n++;
+        BIENES.push({ inv: id, desc: m.desc ? String(r[m.desc] ?? '') : '', custodio: c ? c.id : 0, ubic: ub, estado: 'pendiente', obs: '' });
       }))) return;
-      toast(n + ' bienes importados como Pendientes'); location.hash = 'panel';
+      $('#ok').disabled = true;
+      toast(nuevas.length + ' bienes importados como Pendientes'); location.hash = 'panel';
     };
   };
   document.querySelectorAll('[data-k]').forEach(s => s.onchange = resumen); resumen();
